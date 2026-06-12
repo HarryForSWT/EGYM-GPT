@@ -519,6 +519,138 @@ h3 { font-size: 1rem;    font-weight: 600; }
   width: 12px;
 }
 
+/* ─── Round Grid (EGYM 3-Runden-Übersicht) ──────────────────── */
+.round-grid {
+  display: grid;
+  /* Max Kraft | R1 | R2 | R3 */
+  grid-template-columns: auto repeat(3, 1fr);
+  gap: 6px;
+  align-items: center;
+  padding: 10px 0 2px;
+}
+
+.round-grid-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: center;
+  padding-bottom: 4px;
+}
+
+.round-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.round-cell-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.round-cell-input {
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 6px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  width: 100%;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.round-cell-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  cursor: text;
+}
+
+.round-cell-input.filled {
+  border-color: #22c55e44;
+  color: var(--success);
+}
+
+.round-cell-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.max-lift-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  min-width: 56px;
+}
+
+.max-lift-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.max-lift-edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+  line-height: 0;
+}
+.max-lift-edit-btn:hover { color: var(--accent); }
+
+/* Modal-Overlay für Max-Kraft-Bearbeitung */
+.max-lift-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 300;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px;
+}
+
+.max-lift-modal {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-md) var(--radius-md);
+  padding: 24px;
+  width: 100%;
+  max-width: 430px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Training-Abschluss-Button (sticky am Ende) */
+.finish-training-bar {
+  position: sticky;
+  bottom: calc(var(--nav-height) + var(--safe-bottom) + 12px);
+  left: 0;
+  right: 0;
+  padding: 0 16px;
+  z-index: 50;
+}
+
 /* ─── Set History (klassischer Modus) ───────────────────────── */
 .set-item {
   display: flex;
