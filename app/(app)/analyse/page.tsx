@@ -279,7 +279,7 @@ export default function AnalysePage() {
                         color: 'var(--text-primary)',
                         fontSize: '0.8rem',
                       }}
-                      formatter={(v: number) => [`${v} kg`, 'Max']}
+                      formatter={(v: any) => [`${v} kg`, 'Max']}
                       cursor={{ fill: 'var(--accent-dim)' }}
                     />
                     <Bar dataKey="maxKg" radius={[4, 4, 0, 0]}>

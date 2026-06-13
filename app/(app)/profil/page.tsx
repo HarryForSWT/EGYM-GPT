@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { LogOut, User, Moon, Sun, ChevronRight, Edit2, Check, Loader2 } from 'lucide-react'
 import { useLang } from '@/lib/LanguageContext'
-import { t, LANG_LABELS, type Lang } from '@/lib/i18n'
+import { t, LANG_LABELS, type Lang, setStoredLang } from '@/lib/i18n'
 
 type Profile = {
   display_name: string
