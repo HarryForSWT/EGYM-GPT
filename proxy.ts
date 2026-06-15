@@ -30,7 +30,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Öffentliche Routen (kein Login nötig)
-  const publicRoutes = ['/login', '/register']
+  const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password']
   const isPublic = publicRoutes.some(r => pathname.startsWith(r))
 
   if (!user && !isPublic) {
@@ -39,7 +39,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (user && isPublic) {
+  if (user && isPublic && pathname !== '/reset-password') {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)
