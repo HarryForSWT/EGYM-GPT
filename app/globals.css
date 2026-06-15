@@ -588,6 +588,38 @@ h3 { font-size: 1rem;    font-weight: 600; }
   font-weight: 400;
 }
 
+.round-cell-button {
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 4px;
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  width: 100%;
+  text-align: center;
+  outline: none;
+  transition: all 0.2s;
+  cursor: pointer;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.round-cell-button:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.round-cell-button.filled {
+  border-color: #22c55e44;
+  color: var(--success);
+}
+
+
 .max-lift-cell {
   display: flex;
   flex-direction: column;
@@ -626,20 +658,21 @@ h3 { font-size: 1rem;    font-weight: 600; }
   backdrop-filter: blur(4px);
   z-index: 300;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   padding: 20px;
 }
 
 .max-lift-modal {
   background: var(--bg-elevated);
-  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-md) var(--radius-md);
-  padding: 24px;
+  border-radius: var(--radius-lg);
+  padding: 20px;
   width: 100%;
-  max-width: 430px;
+  max-width: 280px;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-elevated);
 }
+
 
 /* Training-Abschluss-Button (sticky am Ende) */
 .finish-training-bar {
