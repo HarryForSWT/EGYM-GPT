@@ -26,6 +26,81 @@ export default function Home() {
   const [recentWorkouts, setRecentWorkouts] = useState<any[]>([])
   const [personalRecords, setPersonalRecords] = useState<any[]>([])
   const [userWeight, setUserWeight] = useState<number>(75)
+  const [selectedMonth, setSelectedMonth] = useState<string>(
+    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  )
+
+  const monthOptions = Array.from({ length: 12 }).map((_, i) => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - i)
+    return {
+      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleDateString(lang === 'de' ? 'de-DE' : lang === 'ru' ? 'ru-RU' : 'en-GB', { month: 'long', year: 'numeric' })
+    }
+  })
+
+  const formatWorkoutItem = (w: any, weight: number) => {
+    const wSets = (w.sets as any[]) || []
+    const exIds = new Set(wSets.map(s => s.exercise_id))
+    const egymSets = wSets.filter(s => s.exercise?.type === 'egym')
+    const classicSets = wSets.filter(s => s.exercise?.type === 'classic')
+    
+    const egymCal = egymSets.length * 1.5 * 5.5 * weight / 60
+    const classicCal = classicSets.length * 2.5 * 4.0 * weight / 60
+    const kcal = Math.round(egymCal + classicCal)
+
+    const volume = wSets.reduce((sum, s) => sum + (parseFloat(s.weight_kg || '0') * parseInt(s.reps || '0', 10)), 0)
+    
+    let typeLabel = 'Gym'
+    if (egymSets.length > 0 && classicSets.length > 0) typeLabel = 'EGYM & Classic'
+    else if (egymSets.length > 0) typeLabel = 'EGYM Zirkel'
+    else if (classicSets.length > 0) typeLabel = 'Classic'
+
+    const trainedMusclesSet = new Set<string>()
+    wSets.forEach(s => {
+      if (s.exercise?.muscle_group) trainedMusclesSet.add(s.exercise.muscle_group)
+      if (s.exercise?.name) trainedMusclesSet.add(s.exercise.name)
+    })
+    
+    return {
+      id: w.id,
+      dateStr: w.start_time ? getGermanDateString(w.start_time) : '',
+      dateLabel: w.start_time ? getDateLabel(new Date(w.start_time), lang) : '',
+      typeLabel,
+      exCount: exIds.size,
+      volume,
+      kcal,
+      status: w.status,
+      trainedMuscles: Array.from(trainedMusclesSet)
+    }
+  }
+
+  useEffect(() => {
+    async function fetchMonthWorkouts() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const [yearStr, monthStr] = selectedMonth.split('-')
+      const year = parseInt(yearStr, 10)
+      const monthIndex = parseInt(monthStr, 10) - 1
+      
+      const startOfMonth = new Date(year, monthIndex, 1)
+      const endOfMonth = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999)
+
+      const { data: recWorkouts } = await supabase
+        .from('workouts')
+        .select('id, start_time, status, completed_at, sets(exercise_id, weight_kg, reps, exercise:exercises(type, name, muscle_group))')
+        .eq('user_id', user.id)
+        .gte('start_time', startOfMonth.toISOString())
+        .lte('start_time', endOfMonth.toISOString())
+        .order('start_time', { ascending: false })
+
+      if (recWorkouts) {
+        setRecentWorkouts(recWorkouts.map(w => formatWorkoutItem(w, userWeight)))
+      }
+    }
+    fetchMonthWorkouts()
+  }, [selectedMonth, userWeight, lang])
 
   useEffect(() => {
     async function loadWeekWorkouts() {
@@ -63,62 +138,7 @@ export default function Home() {
           })
         }
 
-        // 4. Fetch last 5 workouts with sets and exercises
-        const { data: recWorkouts } = await supabase
-          .from('workouts')
-          .select('id, start_time, status, completed_at, sets(exercise_id, weight_kg, reps, exercise:exercises(type, name, muscle_group))')
-          .eq('user_id', user.id)
-          .order('start_time', { ascending: false })
-          .limit(5)
-
-        if (recWorkouts) {
-          const formatted = recWorkouts.map(w => {
-            const wSets = (w.sets as any[]) || []
-            const exIds = new Set(wSets.map(s => s.exercise_id))
-            const egymSets = wSets.filter(s => s.exercise?.type === 'egym')
-            const classicSets = wSets.filter(s => s.exercise?.type === 'classic')
-            
-            const egymCal = egymSets.length * 1.5 * 5.5 * uWeight / 60
-            const classicCal = classicSets.length * 2.5 * 4.0 * uWeight / 60
-            const kcal = Math.round(egymCal + classicCal)
-
-            const volume = wSets.reduce((sum, s) => sum + (parseFloat(s.weight_kg || '0') * parseInt(s.reps || '0', 10)), 0)
-            
-            // Determine type label
-            let typeLabel = 'Gym'
-            if (egymSets.length > 0 && classicSets.length > 0) {
-              typeLabel = 'EGYM & Classic'
-            } else if (egymSets.length > 0) {
-              typeLabel = 'EGYM Zirkel'
-            } else if (classicSets.length > 0) {
-              typeLabel = 'Classic'
-            }
-
-            const trainedMusclesSet = new Set<string>()
-            wSets.forEach(s => {
-              if (s.exercise?.muscle_group) {
-                trainedMusclesSet.add(s.exercise.muscle_group)
-              }
-              if (s.exercise?.name) {
-                trainedMusclesSet.add(s.exercise.name)
-              }
-            })
-            const trainedMuscles = Array.from(trainedMusclesSet)
-
-            return {
-              id: w.id,
-              dateStr: w.start_time ? getGermanDateString(w.start_time) : '',
-              dateLabel: w.start_time ? getDateLabel(new Date(w.start_time), lang) : '',
-              typeLabel,
-              exCount: exIds.size,
-              volume,
-              kcal,
-              status: w.status,
-              trainedMuscles
-            }
-          })
-          setRecentWorkouts(formatted)
-        }
+        // 4. Removed recentWorkouts fetch from here (moved to separate effect)
 
         // 5. Fetch personal records
         const { data: prData } = await supabase
@@ -248,9 +268,29 @@ export default function Home() {
 
         {/* Activity Feed / History */}
         <div className="mt-2 mb-6">
-          <h3 style={{ fontSize: '0.9rem', marginBottom: 12, marginLeft: 4 }}>
-            ⏱️ {t(lang, 'activityHistory')}
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingLeft: 4, paddingRight: 4 }}>
+            <h3 style={{ fontSize: '0.9rem', margin: 0 }}>
+              ⏱️ {t(lang, 'activityHistory')}
+            </h3>
+            <select 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              style={{
+                background: 'var(--bg-elevated)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '4px 8px',
+                fontSize: '0.8rem',
+                outline: 'none',
+                fontFamily: 'inherit'
+              }}
+            >
+              {monthOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
           {recentWorkouts.length === 0 ? (
             <div className="card text-center py-6 text-secondary text-sm">
               {lang === 'de' ? 'Noch keine aufgezeichneten Workouts.' : lang === 'ru' ? 'Нет записей о тренировках.' : 'No workouts recorded yet.'}
@@ -297,6 +337,7 @@ export default function Home() {
                   </div>
                 </Link>
               ))}
+
             </div>
           )}
         </div>

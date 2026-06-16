@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLang } from '@/lib/LanguageContext'
 import { t } from '@/lib/i18n'
-import { ChevronLeft, Dumbbell, Flame, Activity, Edit2, Loader2, Calendar } from 'lucide-react'
+import { ChevronLeft, Dumbbell, Flame, Activity, Edit2, Loader2, Calendar, Trash2 } from 'lucide-react'
 import MuscleFigure from '@/components/MuscleFigure'
 import { getGermanDateString } from '@/lib/dateUtils'
 
@@ -192,6 +192,20 @@ export default function WorkoutDetailPage() {
     router.push(editUrl)
   }
 
+  const handleDelete = async () => {
+    const confirmMsg = lang === 'de' 
+      ? 'Möchtest du dieses Training wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.' 
+      : 'Do you really want to delete this workout? This action cannot be undone.'
+      
+    if (!window.confirm(confirmMsg)) return
+    
+    // Explicitly delete sets first to avoid foreign key constraint errors if ON DELETE CASCADE is not set
+    await supabase.from('sets').delete().eq('workout_id', workout.id)
+    await supabase.from('workouts').delete().eq('id', workout.id)
+    
+    router.push('/')
+  }
+
   return (
     <div className="animate-fade-in pb-10">
       {/* Header */}
@@ -272,9 +286,19 @@ export default function WorkoutDetailPage() {
         </div>
 
         {/* Edit Button */}
-        <button className="btn btn-secondary btn-full flex justify-center items-center" onClick={handleEdit}>
+        <button className="btn btn-secondary btn-full flex justify-center items-center" style={{ gap: '8px' }} onClick={handleEdit}>
           <Edit2 size={16} />
           Training nachträglich bearbeiten
+        </button>
+
+        {/* Delete Button */}
+        <button 
+          className="btn btn-full flex justify-center items-center mt-3" 
+          style={{ background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', gap: '8px' }} 
+          onClick={handleDelete}
+        >
+          <Trash2 size={16} />
+          Training löschen
         </button>
       </div>
 
