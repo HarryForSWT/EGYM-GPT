@@ -92,6 +92,20 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
+  padding-top: max(env(safe-area-inset-top), 16px);
+}
+
+.app-shell::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 430px;
+  height: max(env(safe-area-inset-top), 16px);
+  background: var(--bg-base);
+  z-index: 999;
 }
 
 .page-content {
