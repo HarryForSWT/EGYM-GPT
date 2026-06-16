@@ -672,14 +672,7 @@ export default function TrainingPage() {
         </div>
       )}
 
-      {/* Floating Rest Timer */}
-      {timerOpen && (
-        <RestTimer 
-          duration={timerDuration} 
-          lang={lang} 
-          onClose={() => setTimerOpen(false)} 
-        />
-      )}
+
 
       {/* Settings Modal */}
       {pageSettingsOpen && (
@@ -700,23 +693,6 @@ export default function TrainingPage() {
                   value={tempRounds}
                   onChange={e => setTempRounds(e.target.value)}
                 />
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">{t(lang, 'restTimerConfig')}</label>
-                <select
-                  className="input-field"
-                  value={tempTimer}
-                  onChange={e => setTempTimer(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}
-                >
-                  <option value="0">{t(lang, 'disabled')}</option>
-                  <option value="60">60 {t(lang, 'seconds')}</option>
-                  <option value="90">90 {t(lang, 'seconds')}</option>
-                  <option value="120">120 {t(lang, 'seconds')}</option>
-                  <option value="150">150 {t(lang, 'seconds')}</option>
-                  <option value="180">180 {t(lang, 'seconds')}</option>
-                </select>
               </div>
             </div>
 
