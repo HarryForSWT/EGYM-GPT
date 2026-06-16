@@ -692,8 +692,16 @@ export default function ClassicTrainingPage() {
                             <div className="input-group">
                               <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {t(lang, 'weightLabel')}
-                                {(ex.name.toLowerCase().includes('klimmzug') || ex.name.toLowerCase().includes('klimmzüg')) && (
-                                  <span title={t(lang, 'pullupWeightInfo')} style={{ color: 'var(--accent)', display: 'flex' }}>
+                                {ex.name.toLowerCase().includes('klimmzug') && (
+                                  <span 
+                                    title={t(lang, 'pullupWeightInfo')} 
+                                    style={{ color: 'var(--accent)', display: 'flex', cursor: 'pointer' }}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      alert(t(lang, 'pullupWeightInfo'));
+                                    }}
+                                  >
                                     <Info size={14} />
                                   </span>
                                 )}
@@ -794,8 +802,16 @@ export default function ClassicTrainingPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {t(lang, 'weightLabel')}
-                  {(dialogExercise.name.toLowerCase().includes('klimmzug') || dialogExercise.name.toLowerCase().includes('klimmzüg')) && (
-                    <span title={t(lang, 'pullupWeightInfo')} style={{ color: 'var(--accent)', display: 'flex' }}>
+                  {dialogExercise.name.toLowerCase().includes('klimmzug') && (
+                    <span 
+                      title={t(lang, 'pullupWeightInfo')} 
+                      style={{ color: 'var(--accent)', display: 'flex', cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        alert(t(lang, 'pullupWeightInfo'));
+                      }}
+                    >
                       <Info size={14} />
                     </span>
                   )}
