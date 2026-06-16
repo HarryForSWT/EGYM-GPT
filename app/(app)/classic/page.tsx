@@ -897,6 +897,7 @@ export default function ClassicTrainingPage() {
                   <option value="Trizeps">{t(lang, 'muscleTriceps')}</option>
                   <option value="Bauch">{t(lang, 'muscleAbs')}</option>
                   <option value="Beine">{t(lang, 'muscleLegs')}</option>
+                  <option value="Waden">{t(lang, 'muscleCalves')}</option>
                 </select>
               </div>
               <div className="flex gap-2 mt-2" style={{ display: 'flex' }}>
