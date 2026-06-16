@@ -8,6 +8,7 @@ import { t } from '@/lib/i18n'
 import { getGermanDateBounds, getGermanDateString } from '@/lib/dateUtils'
 import RestTimer from '@/components/RestTimer'
 import { useWakeLock } from '@/hooks/useWakeLock'
+import { enqueueSetUpsert, processSyncQueue } from '@/lib/syncQueue'
 
 type Exercise = { id: string; name: string; muscle_group: string; egym_order: number }
 type SetDetails = { weight: string; reps: string }
@@ -60,6 +61,29 @@ export default function TrainingPage() {
   const [tempRounds, setTempRounds] = useState('3')
   const [tempTimer, setTempTimer] = useState('90')
   const [settingsSaving, setSettingsSaving] = useState(false)
+
+  const [hasOfflineSync, setHasOfflineSync] = useState(false)
+
+  useEffect(() => {
+    const checkQueue = () => {
+      const data = localStorage.getItem('egym_offline_sets_queue')
+      setHasOfflineSync(data ? JSON.parse(data).length > 0 : false)
+    }
+    checkQueue()
+    
+    window.addEventListener('sync-queue-updated', checkQueue)
+    
+    processSyncQueue(supabase)
+    const handleOnline = () => {
+      processSyncQueue(supabase)
+    }
+    window.addEventListener('online', handleOnline)
+
+    return () => {
+      window.removeEventListener('sync-queue-updated', checkQueue)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [supabase])
 
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null)
   const [selectedDate, setSelectedDate]   = useState<Date>(() => {
@@ -380,10 +404,20 @@ export default function TrainingPage() {
     }
 
     // 3. Persist in database in background
-    supabase.from('sets').upsert(
-      { workout_id: workoutId, exercise_id: dialogExercise.id, weight_kg: wVal, reps: rVal, round_number: dialogRound },
-      { onConflict: 'workout_id,exercise_id,round_number' }
-    ).then()
+    const payload = { 
+      workout_id: workoutId, 
+      exercise_id: dialogExercise.id, 
+      weight_kg: wVal, 
+      reps: rVal, 
+      round_number: dialogRound,
+      created_at: new Date().toISOString()
+    }
+    
+    supabase.from('sets').upsert(payload, { onConflict: 'workout_id,exercise_id,round_number' })
+      .then(
+        ({ error }) => { if (error) enqueueSetUpsert(payload) },
+        () => { enqueueSetUpsert(payload) }
+      )
   }
 
   const totalCompletedSets = exercises.reduce((sum, ex) => sum + completedRounds(ex.id), 0)
@@ -398,23 +432,30 @@ export default function TrainingPage() {
   return (
     <div className="animate-fade-in">
       <header className="page-header pb-3">
-        <div>
-          <h1 className="page-header-title">{t(lang, 'egymTitle')}</h1>
-          <p className="text-secondary" style={{ fontSize: '0.85rem' }}>
-            {isCompleted ? t(lang, 'trainingDone') : t(lang, 'trainingHint')}
-          </p>
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <h1 className="page-header-title">{t(lang, 'egymTitle')}</h1>
+            {hasOfflineSync && (
+              <span title="Offline Änderungen warten auf Synchronisation" className="pulse-finished" style={{ display: 'flex', color: 'var(--warning, #f59e0b)', borderRadius: '50%' }}>
+                ☁️
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {isCompleted && <Trophy size={22} className="text-warning" />}
+            <button 
+              className="btn btn-ghost" 
+              style={{ padding: 6, minHeight: 'auto' }} 
+              onClick={() => setPageSettingsOpen(true)}
+              aria-label="Settings"
+            >
+              <Settings size={22} className="text-muted" />
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {isCompleted && <Trophy size={22} className="text-warning" />}
-          <button 
-            className="btn btn-ghost" 
-            style={{ padding: 6, minHeight: 'auto' }} 
-            onClick={() => setPageSettingsOpen(true)}
-            aria-label="Settings"
-          >
-            <Settings size={22} className="text-muted" />
-          </button>
-        </div>
+        <p className="text-secondary" style={{ fontSize: '0.85rem', marginTop: '4px' }}>
+          {isCompleted ? t(lang, 'trainingDone') : t(lang, 'trainingHint')}
+        </p>
       </header>
 
       {/* Date Navigation Header */}

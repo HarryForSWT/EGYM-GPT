@@ -8,6 +8,7 @@ import { t } from '@/lib/i18n'
 import { getGermanDateBounds, getGermanDateString } from '@/lib/dateUtils'
 import RestTimer from '@/components/RestTimer'
 import { useWakeLock } from '@/hooks/useWakeLock'
+import { enqueueSetUpsert, processSyncQueue } from '@/lib/syncQueue'
 
 type Exercise = { id: string; name: string; muscle_group: string }
 type SetItem = { weight: string; reps: string; round_number: number }
@@ -82,6 +83,29 @@ export default function ClassicTrainingPage() {
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false)
   const [tempTimer, setTempTimer] = useState('90')
   const [settingsSaving, setSettingsSaving] = useState(false)
+
+  const [hasOfflineSync, setHasOfflineSync] = useState(false)
+
+  useEffect(() => {
+    const checkQueue = () => {
+      const data = localStorage.getItem('egym_offline_sets_queue')
+      setHasOfflineSync(data ? JSON.parse(data).length > 0 : false)
+    }
+    checkQueue()
+    
+    window.addEventListener('sync-queue-updated', checkQueue)
+    
+    processSyncQueue(supabase)
+    const handleOnline = () => {
+      processSyncQueue(supabase)
+    }
+    window.addEventListener('online', handleOnline)
+
+    return () => {
+      window.removeEventListener('sync-queue-updated', checkQueue)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [supabase])
 
   // Custom Exercise creation states
   const [customExOpen, setCustomExOpen] = useState(false)
@@ -363,17 +387,20 @@ export default function ClassicTrainingPage() {
     }
 
     // Background Database Upsert
-    supabase.from('sets').upsert(
-      {
-        workout_id: workoutId,
-        exercise_id: exId,
-        round_number: nextRound,
-        weight_kg: wVal,
-        reps: rVal,
-        created_at: new Date().toISOString()
-      },
-      { onConflict: 'workout_id,exercise_id,round_number' }
-    ).then()
+    const payload = {
+      workout_id: workoutId,
+      exercise_id: exId,
+      round_number: nextRound,
+      weight_kg: wVal,
+      reps: rVal,
+      created_at: new Date().toISOString()
+    }
+    
+    supabase.from('sets').upsert(payload, { onConflict: 'workout_id,exercise_id,round_number' })
+      .then(
+        ({ error }) => { if (error) enqueueSetUpsert(payload) },
+        () => { enqueueSetUpsert(payload) }
+      )
   }
 
   const handleDeleteSet = async (exId: string, roundNum: number) => {
@@ -425,17 +452,20 @@ export default function ClassicTrainingPage() {
     setDialogRound(null)
 
     // Background Database Upsert
-    supabase.from('sets').upsert(
-      {
-        workout_id: workoutId,
-        exercise_id: dialogExercise.id,
-        round_number: dialogRound,
-        weight_kg: wVal,
-        reps: rVal,
-        created_at: new Date().toISOString()
-      },
-      { onConflict: 'workout_id,exercise_id,round_number' }
-    ).then()
+    const payload = {
+      workout_id: workoutId,
+      exercise_id: dialogExercise.id,
+      round_number: dialogRound,
+      weight_kg: wVal,
+      reps: rVal,
+      created_at: new Date().toISOString()
+    }
+
+    supabase.from('sets').upsert(payload, { onConflict: 'workout_id,exercise_id,round_number' })
+      .then(
+        ({ error }) => { if (error) enqueueSetUpsert(payload) },
+        () => { enqueueSetUpsert(payload) }
+      )
   }
 
   const togglePanel = (id: string) => {
@@ -493,25 +523,32 @@ export default function ClassicTrainingPage() {
   }
 
   return (
-    <div className="animate-fade-in pb-8">
+    <div className="animate-fade-in" style={{ paddingBottom: '100px' }}>
       <header className="page-header pb-3">
-        <div>
-          <h1 className="page-header-title">{t(lang, 'classicTraining')}</h1>
-          <p className="text-secondary" style={{ fontSize: '0.85rem' }}>
-            {isCompleted ? t(lang, 'trainingDone') : t(lang, 'freeWeights')}
-          </p>
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <h1 className="page-header-title">{t(lang, 'classicTraining')}</h1>
+            {hasOfflineSync && (
+              <span title="Offline Änderungen warten auf Synchronisation" className="pulse-finished" style={{ display: 'flex', color: 'var(--warning, #f59e0b)', borderRadius: '50%' }}>
+                ☁️
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {isCompleted && <Trophy size={22} className="text-warning" />}
+            <button 
+              className="btn btn-ghost" 
+              style={{ padding: 6, minHeight: 'auto' }} 
+              onClick={() => setPageSettingsOpen(true)}
+              aria-label="Settings"
+            >
+              <Settings size={22} className="text-muted" />
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {isCompleted && <Trophy size={22} className="text-warning" />}
-          <button 
-            className="btn btn-ghost" 
-            style={{ padding: 6, minHeight: 'auto' }} 
-            onClick={() => setPageSettingsOpen(true)}
-            aria-label="Settings"
-          >
-            <Settings size={22} className="text-muted" />
-          </button>
-        </div>
+        <p className="text-secondary" style={{ fontSize: '0.85rem', marginTop: '4px' }}>
+          {isCompleted ? t(lang, 'trainingDone') : t(lang, 'freeWeights')}
+        </p>
       </header>
 
       {/* Date Navigation Header */}
