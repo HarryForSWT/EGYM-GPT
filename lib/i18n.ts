@@ -116,6 +116,7 @@ export const translations = {
     muscleChest: 'Brust',
     muscleAbs: 'Bauch',
     muscleLegs: 'Beine',
+    muscleCalves: 'Waden',
     // Templates
     templates: 'Vorlagen',
     saveTemplate: 'Als Vorlage speichern',
@@ -253,6 +254,7 @@ export const translations = {
     muscleChest: 'Chest',
     muscleAbs: 'Abs',
     muscleLegs: 'Legs',
+    muscleCalves: 'Calves',
     // Templates
     templates: 'Templates',
     saveTemplate: 'Save as template',
@@ -389,6 +391,7 @@ export const translations = {
     muscleChest: 'Грудь',
     muscleAbs: 'Пресс',
     muscleLegs: 'Ноги',
+    muscleCalves: 'Икры',
     // Templates
     templates: 'Шаблоны',
     saveTemplate: 'Сохранить как шаблон',
