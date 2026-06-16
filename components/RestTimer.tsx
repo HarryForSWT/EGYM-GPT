@@ -15,6 +15,30 @@ export default function RestTimer({ duration, onClose, lang }: RestTimerProps) {
   const [isActive, setIsActive] = useState(true)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const dragStartPos = useRef({ x: 0, y: 0 })
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    setIsDragging(true)
+    dragStartPos.current = { x: e.clientX - position.x, y: e.clientY - position.y }
+    if (e.target instanceof Element) e.target.setPointerCapture(e.pointerId)
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (isDragging) {
+      setPosition({
+        x: e.clientX - dragStartPos.current.x,
+        y: e.clientY - dragStartPos.current.y
+      })
+    }
+  }
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false)
+    if (e.target instanceof Element) e.target.releasePointerCapture(e.pointerId)
+  }
+  
   // Audio context beep function
   const playBeep = () => {
     try {
@@ -68,10 +92,15 @@ export default function RestTimer({ duration, onClose, lang }: RestTimerProps) {
       if (timerRef.current) clearInterval(timerRef.current)
     }
 
+    if (secondsRemaining === 0) {
+      const timeout = setTimeout(() => onClose(), 1500)
+      return () => clearTimeout(timeout)
+    }
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [isActive, secondsRemaining])
+  }, [isActive, secondsRemaining, onClose])
 
   const toggleActive = () => {
     setIsActive(!isActive)
@@ -92,12 +121,22 @@ export default function RestTimer({ duration, onClose, lang }: RestTimerProps) {
   }
 
   return (
-    <div className={`rest-timer-floating ${isFinished ? 'pulse-finished' : ''}`}>
-      <div className="rest-timer-header">
-        <span className="rest-timer-title">
+    <div 
+      className={`rest-timer-floating ${isFinished ? 'pulse-finished' : ''}`}
+      style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
+    >
+      <div 
+        className="rest-timer-header"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        style={{ cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+      >
+        <span className="rest-timer-title" style={{ userSelect: 'none' }}>
           ⏱️ {t(lang, 'restTimer')}
         </span>
-        <button className="rest-timer-close" onClick={onClose} aria-label="Close timer">
+        <button className="rest-timer-close" onClick={onClose} aria-label="Close timer" style={{ cursor: 'pointer' }}>
           <X size={16} />
         </button>
       </div>
