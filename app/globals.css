@@ -864,3 +864,116 @@ h3 { font-size: 1rem;    font-weight: 600; }
 .rounded-full { border-radius: 999px; }
 .opacity-50 { opacity: 0.5; }
 .pointer { cursor: pointer; }
+
+/* ─── Settings List (iOS Style) ─────────────────────────────── */
+.settings-group {
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.settings-row:active {
+  background: var(--bg-hover);
+}
+
+.settings-row:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-row-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.settings-row-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.settings-row-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.settings-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-row-value {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.settings-row-chevron {
+  color: var(--text-muted);
+}
+
+.settings-group-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  margin-left: 12px;
+}
+
+/* Sub-View Navigation */
+.subview-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px 8px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-base);
+  z-index: 10;
+  gap: 12px;
+}
+
+.subview-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  background: none;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.subview-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  flex: 1;
+}

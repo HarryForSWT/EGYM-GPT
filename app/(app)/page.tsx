@@ -7,6 +7,7 @@ import { useLang } from '@/lib/LanguageContext'
 import { t } from '@/lib/i18n'
 import { createClient } from '@/lib/supabase/client'
 import { getGermanWeekBounds, getGermanDateString } from '@/lib/dateUtils'
+import MuscleFigure from '@/components/MuscleFigure'
 
 type CalendarDay = {
   name: string
@@ -65,7 +66,7 @@ export default function Home() {
         // 4. Fetch last 5 workouts with sets and exercises
         const { data: recWorkouts } = await supabase
           .from('workouts')
-          .select('id, start_time, status, completed_at, sets(exercise_id, weight_kg, reps, exercise:exercises(type, name))')
+          .select('id, start_time, status, completed_at, sets(exercise_id, weight_kg, reps, exercise:exercises(type, name, muscle_group))')
           .eq('user_id', user.id)
           .order('start_time', { ascending: false })
           .limit(5)
@@ -93,6 +94,17 @@ export default function Home() {
               typeLabel = 'Classic'
             }
 
+            const trainedMusclesSet = new Set<string>()
+            wSets.forEach(s => {
+              if (s.exercise?.muscle_group) {
+                trainedMusclesSet.add(s.exercise.muscle_group)
+              }
+              if (s.exercise?.name) {
+                trainedMusclesSet.add(s.exercise.name)
+              }
+            })
+            const trainedMuscles = Array.from(trainedMusclesSet)
+
             return {
               id: w.id,
               dateStr: w.start_time ? getGermanDateString(w.start_time) : '',
@@ -101,7 +113,8 @@ export default function Home() {
               exCount: exIds.size,
               volume,
               kcal,
-              status: w.status
+              status: w.status,
+              trainedMuscles
             }
           })
           setRecentWorkouts(formatted)
@@ -247,25 +260,33 @@ export default function Home() {
               {recentWorkouts.map((w) => (
                 <Link 
                   key={w.id} 
-                  href={w.typeLabel.includes('EGYM') ? `/training?date=${w.dateStr}` : `/classic?date=${w.dateStr}`}
+                  href={`/workout/${w.id}`}
                   style={{ textDecoration: 'none', color: 'inherit' }}
                 >
-                  <div className="card p-3 flex justify-between items-center" style={{ transition: 'all 0.15s', cursor: 'pointer' }}>
-                    <div>
+                  <div className="card p-3 flex items-center gap-4" style={{ transition: 'all 0.15s', cursor: 'pointer' }}>
+                    {/* Muscle Figure */}
+                    <div style={{ flexShrink: 0, opacity: 0.9 }}>
+                      <MuscleFigure activeMuscles={w.trainedMuscles} width={50} height={40} />
+                    </div>
+                    
+                    {/* Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span className={`badge ${w.typeLabel.includes('EGYM') ? 'badge-accent' : 'badge-secondary'}`} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
                           {w.typeLabel}
                         </span>
                         {w.status === 'completed' && <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>✓</span>}
                       </div>
-                      <h4 style={{ fontSize: '0.92rem', fontWeight: 600, marginTop: 4, marginBottom: 2 }}>
+                      <h4 style={{ fontSize: '0.92rem', fontWeight: 600, marginTop: 4, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {w.dateLabel}
                       </h4>
-                      <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                      <div className="text-muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {w.exCount} {t(lang, 'exercisesWord')} · {t(lang, 'volume')}: {w.volume} kg
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    
+                    {/* Kcal & Arrow */}
+                    <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--accent)' }}>
                           {w.kcal} kcal

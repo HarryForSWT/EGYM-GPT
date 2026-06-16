@@ -7,6 +7,7 @@ import { useLang } from '@/lib/LanguageContext'
 import { t } from '@/lib/i18n'
 import { getGermanDateBounds, getGermanDateString } from '@/lib/dateUtils'
 import RestTimer from '@/components/RestTimer'
+import { useWakeLock } from '@/hooks/useWakeLock'
 
 type Exercise = { id: string; name: string; muscle_group: string; egym_order: number }
 type SetDetails = { weight: string; reps: string }
@@ -35,6 +36,7 @@ function getDateLabel(date: Date, lang: 'de' | 'en' | 'ru'): string {
 }
 
 export default function TrainingPage() {
+  useWakeLock()
   const supabase  = createClient()
   const { lang }  = useLang()
 
@@ -240,6 +242,7 @@ export default function TrainingPage() {
   }
 
   const finishTraining = async () => {
+    setTimerOpen(false)
     if (!workoutId) return
     setFinishing(true)
     await supabase.from('workouts')
