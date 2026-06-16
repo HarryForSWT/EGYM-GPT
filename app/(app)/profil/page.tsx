@@ -90,7 +90,7 @@ export default function ProfilPage() {
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
-    const wVal = draft.weight_kg ? parseFloat(draft.weight_kg) : null
+    const wVal = draft.weight_kg ? parseFloat(draft.weight_kg.replace(',', '.')) : null
     const rVal = draft.egym_rounds ? parseInt(draft.egym_rounds, 10) : 3
     const tVal = draft.rest_timer_seconds ? parseInt(draft.rest_timer_seconds, 10) : 90
     await supabase.from('profiles').upsert({
@@ -214,7 +214,8 @@ export default function ProfilPage() {
                 <label className="input-label">{t(lang, 'bodyWeight')}</label>
                 <input
                   type="number"
-                  step="0.1"
+                  inputMode="decimal"
+                  step="0.001"
                   className="input-field"
                   placeholder="z.B. 75.5"
                   value={draft.weight_kg}

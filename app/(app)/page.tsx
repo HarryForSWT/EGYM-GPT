@@ -81,7 +81,7 @@ export default function Home() {
             const classicCal = classicSets.length * 2.5 * 4.0 * uWeight / 60
             const kcal = Math.round(egymCal + classicCal)
 
-            const volume = wSets.reduce((sum, s) => sum + (parseFloat(s.weight_kg || '0') * parseInt(s.reps || '0', 10)), 0)
+            const volume = Math.round(wSets.reduce((sum, s) => sum + (parseFloat(s.weight_kg?.toString().replace(',', '.') || '0') * parseInt(s.reps?.toString() || '0', 10)), 0))
             
             // Determine type label
             let typeLabel = 'Gym'
