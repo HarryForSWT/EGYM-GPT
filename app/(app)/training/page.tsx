@@ -624,7 +624,7 @@ export default function TrainingPage() {
               <div className="input-group flex-1">
                 <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {lang === 'de' ? 'Gewicht (kg)' : lang === 'ru' ? 'Вес (кг)' : 'Weight (kg)'}
-                  {dialogExercise?.name?.toLowerCase().includes('klimmzug') && (
+                  {(dialogExercise?.name?.toLowerCase().includes('klimmzug') || dialogExercise?.name?.toLowerCase().includes('klimmzüg')) && (
                     <span title={t(lang, 'pullupWeightInfo')} style={{ color: 'var(--accent)', display: 'flex' }}>
                       <Info size={14} />
                     </span>
