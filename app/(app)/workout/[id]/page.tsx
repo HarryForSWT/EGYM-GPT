@@ -92,7 +92,7 @@ export default function WorkoutDetailPage() {
         const groupsMap = new Map<string, GroupedExercise>()
 
         sData.forEach(s => {
-          volume += (s.weight_kg || 0) * (s.reps || 0)
+          volume += parseFloat(s.weight_kg?.toString().replace(',', '.') || '0') * (s.reps || 0)
           
           if (s.exercise) {
             exIds.add(s.exercise.id)
@@ -153,7 +153,7 @@ export default function WorkoutDetailPage() {
         }
 
         setStats({
-          volume,
+          volume: Math.round(volume),
           kcal,
           exCount: exIds.size,
           trainedMuscles: Array.from(trainedMusclesSet),
