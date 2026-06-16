@@ -33,7 +33,7 @@ export default function LoginPage() {
   return (
     <div className="auth-page">
       {/* Sprachauswahl */}
-      <div style={{ position: 'absolute', top: 20, right: 20, display: 'flex', gap: 6 }}>
+      <div style={{ position: 'absolute', top: 'max(env(safe-area-inset-top, 20px), 60px)', right: 20, display: 'flex', gap: 6 }}>
         {(Object.keys(LANG_LABELS) as Lang[]).map(l => (
           <button key={l} onClick={() => setLang(l)} style={{
             padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid',

@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Check, Edit2, Loader2, Trophy, ChevronDown, ChevronLeft, ChevronRight, Calendar, Settings } from 'lucide-react'
+import { Check, Edit2, Loader2, Trophy, ChevronDown, ChevronLeft, ChevronRight, Calendar, Settings, Info } from 'lucide-react'
 import { useLang } from '@/lib/LanguageContext'
 import { t } from '@/lib/i18n'
 import { getGermanDateBounds, getGermanDateString } from '@/lib/dateUtils'
 import RestTimer from '@/components/RestTimer'
+import { useWakeLock } from '@/hooks/useWakeLock'
 
 type Exercise = { id: string; name: string; muscle_group: string; egym_order: number }
 type SetDetails = { weight: string; reps: string }
@@ -35,6 +36,7 @@ function getDateLabel(date: Date, lang: 'de' | 'en' | 'ru'): string {
 }
 
 export default function TrainingPage() {
+  useWakeLock()
   const supabase  = createClient()
   const { lang }  = useLang()
 
@@ -244,6 +246,7 @@ export default function TrainingPage() {
   }
 
   const finishTraining = async () => {
+    setTimerOpen(false)
     if (!workoutId) return
     setFinishing(true)
     await supabase.from('workouts')
@@ -619,7 +622,14 @@ export default function TrainingPage() {
             
             <div className="flex gap-4 mb-4">
               <div className="input-group flex-1">
-                <label className="input-label">{lang === 'de' ? 'Gewicht (kg)' : 'Weight (kg)'}</label>
+                <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {lang === 'de' ? 'Gewicht (kg)' : lang === 'ru' ? 'Вес (кг)' : 'Weight (kg)'}
+                  {dialogExercise?.name?.toLowerCase().includes('klimmzug') && (
+                    <span title={t(lang, 'pullupWeightInfo')} style={{ color: 'var(--accent)', display: 'flex' }}>
+                      <Info size={14} />
+                    </span>
+                  )}
+                </label>
                 <input
                   type="number"
                   inputMode="decimal"

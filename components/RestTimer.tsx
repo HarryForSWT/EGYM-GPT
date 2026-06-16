@@ -18,6 +18,9 @@ export default function RestTimer({ duration, onClose, lang }: RestTimerProps) {
   // Audio context beep function
   const playBeep = () => {
     try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 200])
+      }
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext
       if (!AudioCtxClass) return
       const audioCtx = new AudioCtxClass()
