@@ -49,7 +49,7 @@ export default function Home() {
     const classicCal = classicSets.length * 2.5 * 4.0 * weight / 60
     const kcal = Math.round(egymCal + classicCal)
 
-    const volume = wSets.reduce((sum, s) => sum + (parseFloat(s.weight_kg || '0') * parseInt(s.reps || '0', 10)), 0)
+    const volume = Math.round(wSets.reduce((sum, s) => sum + (parseFloat(s.weight_kg?.toString().replace(',', '.') || '0') * parseInt(s.reps?.toString() || '0', 10)), 0))
     
     let typeLabel = 'Gym'
     if (egymSets.length > 0 && classicSets.length > 0) typeLabel = 'EGYM & Classic'
@@ -138,7 +138,7 @@ export default function Home() {
           })
         }
 
-        // 4. Removed recentWorkouts fetch from here (moved to separate effect)
+
 
         // 5. Fetch personal records
         const { data: prData } = await supabase

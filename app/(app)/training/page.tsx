@@ -210,13 +210,17 @@ export default function TrainingPage() {
     if (!editMaxEx) return
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const val = parseFloat(editMaxVal)
+    const val = parseFloat(editMaxVal.replace(',', '.'))
     if (isNaN(val) || val <= 0) { setEditMaxEx(null); return }
-    await supabase.from('max_lifts').insert(
-      { user_id: user.id, exercise_id: editMaxEx.id, weight_kg: val, updated_at: new Date().toISOString() }
-    )
+    
+    // Optimistic UI Update
     setMaxLifts(prev => ({ ...prev, [editMaxEx.id]: val }))
     setEditMaxEx(null)
+
+    // Background Database Insert
+    supabase.from('max_lifts').insert(
+      { user_id: user.id, exercise_id: editMaxEx.id, weight_kg: val, updated_at: new Date().toISOString() }
+    ).then()
   }
 
   const handleSavePageSettings = async () => {
@@ -314,7 +318,7 @@ export default function TrainingPage() {
 
   const handleSaveSet = async () => {
     if (!dialogExercise || !dialogRound || !workoutId) return
-    const wVal = parseFloat(dialogWeight)
+    const wVal = parseFloat(dialogWeight.replace(',', '.'))
     const rVal = parseInt(dialogReps, 10)
     
     if (isNaN(wVal) || wVal <= 0 || isNaN(rVal) || rVal <= 0) {
@@ -330,12 +334,6 @@ export default function TrainingPage() {
       }
     }))
     
-    // 2. Persist in database
-    await supabase.from('sets').upsert(
-      { workout_id: workoutId, exercise_id: dialogExercise.id, weight_kg: wVal, reps: rVal, round_number: dialogRound },
-      { onConflict: 'workout_id,exercise_id,round_number' }
-    )
-    
     setDialogOpen(false)
 
     // Trigger Rest Timer
@@ -345,7 +343,7 @@ export default function TrainingPage() {
       setTimeout(() => setTimerOpen(true), 50)
     }
     
-    // 3. Auto-advance to next panel in circuit order
+    // 2. Auto-advance to next panel in circuit order
     const currentExIndex = exercises.findIndex(ex => ex.id === dialogExercise.id)
     if (currentExIndex !== -1) {
       const currentIndex = (dialogRound - 1) * exercises.length + currentExIndex
@@ -380,6 +378,12 @@ export default function TrainingPage() {
         setActiveExerciseId(null)
       }
     }
+
+    // 3. Persist in database in background
+    supabase.from('sets').upsert(
+      { workout_id: workoutId, exercise_id: dialogExercise.id, weight_kg: wVal, reps: rVal, round_number: dialogRound },
+      { onConflict: 'workout_id,exercise_id,round_number' }
+    ).then()
   }
 
   const totalCompletedSets = exercises.reduce((sum, ex) => sum + completedRounds(ex.id), 0)
@@ -597,7 +601,7 @@ export default function TrainingPage() {
             <p className="text-secondary text-sm mb-4">{editMaxEx.name}</p>
             <div className="input-group mb-4">
               <label className="input-label">kg</label>
-              <input type="number" inputMode="decimal" className="input-field" placeholder="z.B. 80"
+              <input type="number" inputMode="decimal" step="0.001" className="input-field" placeholder="z.B. 80"
                 value={editMaxVal} autoFocus
                 onChange={e => setEditMaxVal(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') saveMaxLift() }} />
@@ -622,6 +626,7 @@ export default function TrainingPage() {
                 <input
                   type="number"
                   inputMode="decimal"
+                  step="0.001"
                   className="input-field"
                   placeholder="z.B. 55"
                   value={dialogWeight}

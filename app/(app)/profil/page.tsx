@@ -115,7 +115,7 @@ export default function ProfilPage() {
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
-    const wVal = draft.weight_kg ? parseFloat(draft.weight_kg) : null
+    const wVal = draft.weight_kg ? parseFloat(draft.weight_kg.replace(',', '.')) : null
     const rVal = draft.egym_rounds ? parseInt(draft.egym_rounds, 10) : 3
     const tVal = draft.rest_timer_seconds ? parseInt(draft.rest_timer_seconds, 10) : 90
     await supabase.from('profiles').upsert({
@@ -244,70 +244,7 @@ export default function ProfilPage() {
           </div>
         </button>
 
-        <button className="settings-row" onClick={() => setActiveView('egymRounds')}>
-          <div className="settings-row-content">
-            <div className="settings-row-icon" style={{ background: '#10b98122', color: '#10b981' }}>
-              <Dumbbell size={16} />
-            </div>
-            <span className="settings-row-label">{t(lang, 'egymRounds')}</span>
-          </div>
-          <div className="settings-row-right">
-            <span className="settings-row-value">{profile.egym_rounds || '3'}</span>
-            <ChevronRight size={18} className="settings-row-chevron" />
-          </div>
-        </button>
 
-        <button className="settings-row" onClick={() => setActiveView('restTimer')}>
-          <div className="settings-row-content">
-            <div className="settings-row-icon" style={{ background: '#f59e0b22', color: '#f59e0b' }}>
-              <Timer size={16} />
-            </div>
-            <span className="settings-row-label">{t(lang, 'restTimerConfig')}</span>
-          </div>
-          <div className="settings-row-right">
-            <span className="settings-row-value">
-              {profile.rest_timer_seconds === '0' ? t(lang, 'disabled') : `${profile.rest_timer_seconds} ${t(lang, 'seconds')}`}
-            </span>
-            <ChevronRight size={18} className="settings-row-chevron" />
-          </div>
-        </button>
-      </div>
-
-      <div className="settings-group-title">Account</div>
-      <div className="settings-group">
-        <button className="settings-row" onClick={() => setActiveView('password')}>
-          <div className="settings-row-content">
-            <div className="settings-row-icon" style={{ background: '#ef444422', color: 'var(--danger)' }}>
-              <Lock size={16} />
-            </div>
-            <span className="settings-row-label">{t(lang, 'changePassword')}</span>
-          </div>
-          <div className="settings-row-right">
-            <ChevronRight size={18} className="settings-row-chevron" />
-          </div>
-        </button>
-      </div>
-
-      <div className="settings-group-title">{t(lang, 'settings')}</div>
-      <div className="settings-group">
-        <button className="settings-row" onClick={() => setActiveView('language')}>
-          <div className="settings-row-content">
-            <div className="settings-row-icon" style={{ background: '#3b82f622', color: '#3b82f6' }}>
-              <Globe size={16} />
-            </div>
-            <span className="settings-row-label">{t(lang, 'language')}</span>
-          </div>
-          <div className="settings-row-right">
-            <span className="settings-row-value">{LANG_LABELS[lang]}</span>
-            <ChevronRight size={18} className="settings-row-chevron" />
-          </div>
-        </button>
-
-        <div className="settings-row" onClick={toggleTheme}>
-          <div className="settings-row-content">
-            <div className="settings-row-icon" style={{ background: 'var(--text-muted)' }}>
-              {theme === 'dark' ? <Moon size={16} color="var(--bg-base)" /> : <Sun size={16} color="var(--bg-base)" />}
-            </div>
             <span className="settings-row-label">{t(lang, 'appearance')}</span>
           </div>
           <div className="settings-row-right">
@@ -377,7 +314,8 @@ export default function ProfilPage() {
             <label className="input-label">{t(lang, 'bodyWeight')}</label>
             <input
               type="number"
-              step="0.1"
+              inputMode="decimal"
+              step="0.001"
               className="input-field"
               placeholder="z.B. 75.5"
               value={draft.weight_kg}

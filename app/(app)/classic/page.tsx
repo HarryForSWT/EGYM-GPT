@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronDown, Plus, Edit2, Play, Trash2, ChevronLeft, ChevronRight, Calendar, Loader2, Trophy, Check, Settings } from 'lucide-react'
+import { ChevronDown, Plus, Edit2, Play, Trash2, ChevronLeft, ChevronRight, Calendar, Loader2, Trophy, Check, Settings, Info } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLang } from '@/lib/LanguageContext'
 import { t } from '@/lib/i18n'
@@ -336,14 +336,34 @@ export default function ClassicTrainingPage() {
 
   const handleAddSet = async (exId: string) => {
     if (!currentWeight || !currentReps || !workoutId) return
-    const wVal = parseFloat(currentWeight)
+    const wVal = parseFloat(currentWeight.replace(',', '.'))
     const rVal = parseInt(currentReps, 10)
     if (isNaN(wVal) || isNaN(rVal) || wVal < 0 || rVal <= 0) return
 
     const currentExSets = sets[exId] || []
     const nextRound = currentExSets.length > 0 ? Math.max(...currentExSets.map(s => s.round_number)) + 1 : 1
 
-    const { error } = await supabase.from('sets').upsert(
+    // Optimistic UI Update
+    setSets(prev => {
+      const current = prev[exId] || []
+      const updated = [...current, { weight: wVal.toString(), reps: rVal.toString(), round_number: nextRound }]
+      return {
+        ...prev,
+        [exId]: updated.sort((a, b) => a.round_number - b.round_number)
+      }
+    })
+    setCurrentWeight('')
+    setCurrentReps('')
+
+    // Trigger Rest Timer
+    if (restTimerSeconds > 0) {
+      setTimerDuration(restTimerSeconds)
+      setTimerOpen(false) // Reset
+      setTimeout(() => setTimerOpen(true), 50)
+    }
+
+    // Background Database Upsert
+    supabase.from('sets').upsert(
       {
         workout_id: workoutId,
         exercise_id: exId,
@@ -353,27 +373,7 @@ export default function ClassicTrainingPage() {
         created_at: new Date().toISOString()
       },
       { onConflict: 'workout_id,exercise_id,round_number' }
-    )
-
-    if (!error) {
-      setSets(prev => {
-        const current = prev[exId] || []
-        const updated = [...current, { weight: wVal.toString(), reps: rVal.toString(), round_number: nextRound }]
-        return {
-          ...prev,
-          [exId]: updated.sort((a, b) => a.round_number - b.round_number)
-        }
-      })
-      setCurrentWeight('')
-      setCurrentReps('')
-
-      // Trigger Rest Timer
-      if (restTimerSeconds > 0) {
-        setTimerDuration(restTimerSeconds)
-        setTimerOpen(false) // Reset
-        setTimeout(() => setTimerOpen(true), 50)
-      }
-    }
+    ).then()
   }
 
   const handleDeleteSet = async (exId: string, roundNum: number) => {
@@ -402,11 +402,30 @@ export default function ClassicTrainingPage() {
 
   const handleSaveDialogSet = async () => {
     if (!dialogExercise || dialogRound === null || !workoutId) return
-    const wVal = parseFloat(dialogWeight)
+    const wVal = parseFloat(dialogWeight.replace(',', '.'))
     const rVal = parseInt(dialogReps, 10)
     if (isNaN(wVal) || isNaN(rVal) || wVal < 0 || rVal <= 0) return
 
-    const { error } = await supabase.from('sets').upsert(
+    // Optimistic UI Update
+    setSets(prev => {
+      const current = prev[dialogExercise.id] || []
+      const updated = current.map(s => {
+        if (s.round_number === dialogRound) {
+          return { ...s, weight: wVal.toString(), reps: rVal.toString() }
+        }
+        return s
+      })
+      return {
+        ...prev,
+        [dialogExercise.id]: updated
+      }
+    })
+    setDialogOpen(false)
+    setDialogExercise(null)
+    setDialogRound(null)
+
+    // Background Database Upsert
+    supabase.from('sets').upsert(
       {
         workout_id: workoutId,
         exercise_id: dialogExercise.id,
@@ -416,26 +435,7 @@ export default function ClassicTrainingPage() {
         created_at: new Date().toISOString()
       },
       { onConflict: 'workout_id,exercise_id,round_number' }
-    )
-
-    if (!error) {
-      setSets(prev => {
-        const current = prev[dialogExercise.id] || []
-        const updated = current.map(s => {
-          if (s.round_number === dialogRound) {
-            return { ...s, weight: wVal.toString(), reps: rVal.toString() }
-          }
-          return s
-        })
-        return {
-          ...prev,
-          [dialogExercise.id]: updated
-        }
-      })
-      setDialogOpen(false)
-      setDialogExercise(null)
-      setDialogRound(null)
-    }
+    ).then()
   }
 
   const togglePanel = (id: string) => {
@@ -483,7 +483,7 @@ export default function ClassicTrainingPage() {
     setSettingsSaving(false)
   }
 
-  const totalCompletedSets = Object.values(sets).reduce((sum, setList) => sum + setList.length, 0)
+  const totalCompletedSets = exercises.reduce((sum, ex) => sum + (sets[ex.id]?.length || 0), 0)
   const estimatedKcal = Math.round(totalCompletedSets * 2.5 * 4.0 * userWeight / 60)
 
   const isToday = getGermanDateString(selectedDate) === getGermanDateString(new Date())
@@ -690,9 +690,18 @@ export default function ClassicTrainingPage() {
                         <>
                           <div className="input-row mt-2">
                             <div className="input-group">
-                              <label className="input-label">{t(lang, 'weightLabel')}</label>
+                              <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {t(lang, 'weightLabel')}
+                                {ex.name.toLowerCase().includes('klimmzug') && (
+                                  <span title={t(lang, 'pullupWeightInfo')} style={{ color: 'var(--accent)', display: 'flex' }}>
+                                    <Info size={14} />
+                                  </span>
+                                )}
+                              </label>
                               <input 
                                 type="number" 
+                                inputMode="decimal"
+                                step="0.001"
                                 className="input-field" 
                                 placeholder="z.B. 60"
                                 value={currentWeight}
@@ -783,11 +792,18 @@ export default function ClassicTrainingPage() {
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {t(lang, 'weightLabel')}
+                  {dialogExercise.name.toLowerCase().includes('klimmzug') && (
+                    <span title={t(lang, 'pullupWeightInfo')} style={{ color: 'var(--accent)', display: 'flex' }}>
+                      <Info size={14} />
+                    </span>
+                  )}
                 </label>
                 <input
                   type="number"
+                  inputMode="decimal"
+                  step="0.001"
                   className="input-field"
                   value={dialogWeight}
                   onChange={(e) => setDialogWeight(e.target.value)}

@@ -211,7 +211,7 @@ export default function AnalysePage() {
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([day, vol]) => ({
             label: formatLabel(day, period),
-            maxKg: vol,
+            maxKg: Math.round(vol),
             date:  day,
           }))
 
