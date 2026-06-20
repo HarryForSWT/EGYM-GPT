@@ -14,6 +14,18 @@ type SetData = {
   weight_kg: number
   reps: number
   round_number: number
+  duration_seconds?: number
+  elapsed_seconds?: number
+  distance_m?: number
+  active_kcal?: number
+  total_kcal?: number
+  elevation_gain_m?: number
+  avg_speed_kmh?: number
+  avg_pace?: string
+  avg_heart_rate_bpm?: number
+  laps?: number
+  pool_length_m?: number
+  avg_cadence_spm?: number
   exercise: {
     id: string
     name: string
@@ -25,7 +37,18 @@ type SetData = {
 type GroupedExercise = {
   exerciseName: string
   exerciseType: string
-  sets: { round: number; weight: number; reps: number }[]
+  sets: any[]
+}
+
+function formatSeconds(totalSecs: number | undefined): string {
+  if (!totalSecs) return '--'
+  const h = Math.floor(totalSecs / 3600)
+  const m = Math.floor((totalSecs % 3600) / 60)
+  const s = totalSecs % 60
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 export default function WorkoutDetailPage() {
@@ -78,7 +101,7 @@ export default function WorkoutDetailPage() {
       // Fetch sets
       const { data: sData } = await supabase
         .from('sets')
-        .select('id, weight_kg, reps, round_number, created_at, exercise:exercises(id, name, type, muscle_group)')
+        .select('id, weight_kg, reps, round_number, created_at, duration_seconds, elapsed_seconds, distance_m, active_kcal, total_kcal, elevation_gain_m, avg_speed_kmh, avg_pace, avg_heart_rate_bpm, laps, pool_length_m, avg_cadence_spm, exercise:exercises(id, name, type, muscle_group)')
         .eq('workout_id', id)
         .order('created_at', { ascending: true }) as { data: SetData[] | null }
 
@@ -117,7 +140,19 @@ export default function WorkoutDetailPage() {
             groupsMap.get(exName)!.sets.push({
               round: s.round_number,
               weight: s.weight_kg || 0,
-              reps: s.reps || 0
+              reps: s.reps || 0,
+              duration_seconds: s.duration_seconds,
+              elapsed_seconds: s.elapsed_seconds,
+              distance_m: s.distance_m ? parseFloat(s.distance_m.toString()) : undefined,
+              active_kcal: s.active_kcal,
+              total_kcal: s.total_kcal,
+              elevation_gain_m: s.elevation_gain_m,
+              avg_speed_kmh: s.avg_speed_kmh ? parseFloat(s.avg_speed_kmh.toString()) : undefined,
+              avg_pace: s.avg_pace,
+              avg_heart_rate_bpm: s.avg_heart_rate_bpm,
+              laps: s.laps,
+              pool_length_m: s.pool_length_m,
+              avg_cadence_spm: s.avg_cadence_spm
             })
           }
         })
@@ -132,13 +167,16 @@ export default function WorkoutDetailPage() {
         // Calculate Kcal
         const egymCal = egymSets * 1.5 * 5.5 * uWeight / 60
         const classicCal = classicSets * 2.5 * 4.0 * uWeight / 60
-        const kcal = Math.round(egymCal + classicCal)
+        const cardioCal = sData.reduce((sum, s) => sum + (s.active_kcal || s.total_kcal || 0), 0)
+        const kcal = Math.round(egymCal + classicCal + cardioCal)
 
         // Type label
-        let typeLabel = 'Gym'
-        if (egymSets > 0 && classicSets > 0) typeLabel = 'EGYM & Classic'
-        else if (egymSets > 0) typeLabel = 'EGYM Zirkel'
-        else if (classicSets > 0) typeLabel = 'Classic'
+        const activeTypes: string[] = []
+        if (egymSets > 0) activeTypes.push('EGYM')
+        if (classicSets > 0) activeTypes.push('Classic')
+        const hasCardio = sData.some(s => s.exercise?.type === 'cardio')
+        if (hasCardio) activeTypes.push(lang === 'de' ? 'Ausdauer' : lang === 'ru' ? 'Кардио' : 'Cardio')
+        const typeLabel = activeTypes.join(' & ') || 'Gym'
 
         // Date label
         let dateLabel = ''
@@ -188,7 +226,9 @@ export default function WorkoutDetailPage() {
   const handleEdit = () => {
     const editUrl = stats.typeLabel.includes('EGYM') 
       ? `/training?date=${getGermanDateString(new Date(workout.start_time))}`
-      : `/classic?date=${getGermanDateString(new Date(workout.start_time))}`
+      : stats.typeLabel.includes('Ausdauer') || stats.typeLabel.includes('Cardio') || stats.typeLabel.includes('Кардио')
+        ? `/cardio?date=${getGermanDateString(new Date(workout.start_time))}`
+        : `/classic?date=${getGermanDateString(new Date(workout.start_time))}`
     router.push(editUrl)
   }
 
@@ -265,14 +305,39 @@ export default function WorkoutDetailPage() {
               </div>
               <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {g.sets.map((s, sIdx) => (
-                  <div key={sIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
-                    <span className="text-muted" style={{ width: '60px' }}>Satz {s.round}</span>
-                    <div style={{ flex: 1, display: 'flex', justifyContent: 'center', fontWeight: 500 }}>
-                      {s.weight} kg
-                    </div>
-                    <div style={{ width: '60px', textAlign: 'right', fontWeight: 500 }}>
-                      {s.reps} Wdh.
-                    </div>
+                  <div key={sIdx} style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', padding: sIdx > 0 ? '8px 0 0' : '0', borderTop: sIdx > 0 ? '1px solid var(--border)' : 'none' }}>
+                    {g.exerciseType === 'cardio' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                          <span className="text-muted">{lang === 'de' ? 'Eintrag' : lang === 'ru' ? 'Запись' : 'Entry'} {s.round}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                            ⏱️ {formatSeconds(s.duration_seconds)}
+                          </span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px 12px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                          {s.distance_m && (
+                            <div>📍 {g.exerciseName.toLowerCase().includes('schwimm') ? `${s.distance_m} m` : `${(s.distance_m / 1000).toFixed(2)} km`}</div>
+                          )}
+                          {s.active_kcal && <div>🔥 {s.active_kcal} kcal</div>}
+                          {s.avg_pace && <div>⏱️ {s.avg_pace}</div>}
+                          {s.avg_heart_rate_bpm && <div>❤️ {s.avg_heart_rate_bpm} bpm</div>}
+                          {s.avg_speed_kmh && <div>⚡ {s.avg_speed_kmh} km/h</div>}
+                          {s.elevation_gain_m && <div>⛰️ {s.elevation_gain_m} m</div>}
+                          {s.avg_cadence_spm && <div>🏃‍♂️ {s.avg_cadence_spm} spm</div>}
+                          {s.laps && <div>🔁 {s.laps} {s.pool_length_m && `(${s.pool_length_m}m)`}</div>}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', width: '100%' }}>
+                        <span className="text-muted" style={{ width: '60px' }}>Satz {s.round}</span>
+                        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', fontWeight: 500 }}>
+                          {s.weight} kg
+                        </div>
+                        <div style={{ width: '60px', textAlign: 'right', fontWeight: 500 }}>
+                          {s.reps} Wdh.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

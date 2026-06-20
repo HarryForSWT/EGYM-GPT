@@ -126,6 +126,75 @@ export default function CardioTrainingPage() {
 
   const [hasOfflineSync, setHasOfflineSync] = useState(false)
 
+  // Auto-propagate duration to elapsed time helper states
+  const [prevDurationH, setPrevDurationH] = useState('')
+  const [prevDurationM, setPrevDurationM] = useState('')
+  const [prevDurationS, setPrevDurationS] = useState('')
+
+  useEffect(() => {
+    if (elapsedH === prevDurationH || elapsedH === '') {
+      setElapsedH(durationH)
+    }
+    setPrevDurationH(durationH)
+  }, [durationH])
+
+  useEffect(() => {
+    if (elapsedM === prevDurationM || elapsedM === '') {
+      setElapsedM(durationM)
+    }
+    setPrevDurationM(durationM)
+  }, [durationM])
+
+  useEffect(() => {
+    if (elapsedS === prevDurationS || elapsedS === '') {
+      setElapsedS(durationS)
+    }
+    setPrevDurationS(durationS)
+  }, [durationS])
+
+  // Conversion helpers between Speed (km/h) and Pace (min/km)
+  const handleSpeedChange = (val: string) => {
+    setAvgSpeed(val)
+    const speedNum = parseFloat(val.replace(',', '.'))
+    if (!isNaN(speedNum) && speedNum > 0) {
+      const totalPaceMinutes = 60 / speedNum
+      const pMin = Math.floor(totalPaceMinutes)
+      const pSec = Math.round((totalPaceMinutes - pMin) * 60)
+      if (pSec === 60) {
+        setPaceMin((pMin + 1).toString())
+        setPaceSec('0')
+      } else {
+        setPaceMin(pMin.toString())
+        setPaceSec(pSec.toString())
+      }
+    } else {
+      setPaceMin('')
+      setPaceSec('')
+    }
+  }
+
+  const calculateSpeedFromPace = (minVal: string, secVal: string) => {
+    const min = parseInt(minVal || '0', 10)
+    const sec = parseInt(secVal || '0', 10)
+    const totalMinutes = min + sec / 60
+    if (totalMinutes > 0) {
+      const speed = 60 / totalMinutes
+      setAvgSpeed(speed.toFixed(1).replace('.', ','))
+    } else {
+      setAvgSpeed('')
+    }
+  }
+
+  const handlePaceMinChange = (val: string) => {
+    setPaceMin(val)
+    calculateSpeedFromPace(val, paceSec)
+  }
+
+  const handlePaceSecChange = (val: string) => {
+    setPaceSec(val)
+    calculateSpeedFromPace(paceMin, val)
+  }
+
   useEffect(() => {
     const checkQueue = () => {
       const data = localStorage.getItem('egym_offline_sets_queue')
@@ -868,7 +937,7 @@ export default function CardioTrainingPage() {
                               {(!isRun && isCycling) && (
                                 <div className="input-group" style={{ flex: 1 }}>
                                   <label className="input-label">{t(lang, 'speedLabel')} (km/h)</label>
-                                  <input type="number" step="any" placeholder="z.B. 25.2" className="input-field" value={avgSpeed} onChange={e => setAvgSpeed(e.target.value)} />
+                                  <input type="text" placeholder="z.B. 25,2" className="input-field" value={avgSpeed} onChange={e => handleSpeedChange(e.target.value)} />
                                 </div>
                               )}
                               {!isPoolSwim && (
@@ -885,9 +954,9 @@ export default function CardioTrainingPage() {
                             <div className="input-group">
                               <label className="input-label">{t(lang, 'paceLabel')} {isSwim ? '(Min:Sek / 100m)' : '(Min:Sek / km)'}</label>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                <input type="number" placeholder="Min" className="input-field text-center" style={{ flex: 1 }} value={paceMin} onChange={e => setPaceMin(e.target.value)} min="0" />
+                                <input type="number" placeholder="Min" className="input-field text-center" style={{ flex: 1 }} value={paceMin} onChange={e => handlePaceMinChange(e.target.value)} min="0" />
                                 <span className="text-muted">:</span>
-                                <input type="number" placeholder="Sek" className="input-field text-center" style={{ flex: 1 }} value={paceSec} onChange={e => setPaceSec(e.target.value)} min="0" max="59" />
+                                <input type="number" placeholder="Sek" className="input-field text-center" style={{ flex: 1 }} value={paceSec} onChange={e => handlePaceSecChange(e.target.value)} min="0" max="59" />
                               </div>
                             </div>
                           )}
@@ -1022,7 +1091,7 @@ export default function CardioTrainingPage() {
                   {!editExercise.name.toLowerCase().includes('lauf') && !editExercise.name.toLowerCase().includes('run') && (
                     <div className="input-group" style={{ flex: 1 }}>
                       <label className="input-label">{t(lang, 'speedLabel')} (km/h)</label>
-                      <input type="number" step="any" className="input-field" value={avgSpeed} onChange={e => setAvgSpeed(e.target.value)} />
+                      <input type="text" className="input-field" value={avgSpeed} onChange={e => handleSpeedChange(e.target.value)} />
                     </div>
                   )}
                   <div className="input-group" style={{ flex: 1 }}>
@@ -1037,9 +1106,9 @@ export default function CardioTrainingPage() {
                 <div className="input-group">
                   <label className="input-label">{t(lang, 'paceLabel')} {editExercise.name.toLowerCase().includes('schwimm') || editExercise.name.toLowerCase().includes('swim') ? '(Min:Sek / 100m)' : '(Min:Sek / km)'}</label>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input type="number" placeholder="Min" className="input-field text-center" style={{ flex: 1 }} value={paceMin} onChange={e => setPaceMin(e.target.value)} min="0" />
+                    <input type="number" placeholder="Min" className="input-field text-center" style={{ flex: 1 }} value={paceMin} onChange={e => handlePaceMinChange(e.target.value)} min="0" />
                     <span className="text-muted">:</span>
-                    <input type="number" placeholder="Sek" className="input-field text-center" style={{ flex: 1 }} value={paceSec} onChange={e => setPaceSec(e.target.value)} min="0" max="59" />
+                    <input type="number" placeholder="Sek" className="input-field text-center" style={{ flex: 1 }} value={paceSec} onChange={e => handlePaceSecChange(e.target.value)} min="0" max="59" />
                   </div>
                 </div>
               )}
