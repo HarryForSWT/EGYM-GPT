@@ -54,6 +54,15 @@ export default function ProfilPage() {
   const [savingMeasurement, setSavingMeasurement] = useState(false)
   const [saveMeasurementError, setSaveMeasurementError] = useState('')
   const [deletingMeasurementId, setDeletingMeasurementId] = useState<string | null>(null)
+  const [filterPeriod, setFilterPeriod] = useState<'7d' | '30d' | '180d' | 'all'>('all')
+
+  const getFilteredMeasurements = () => {
+    if (filterPeriod === 'all') return measurements
+    const now = new Date()
+    const days = filterPeriod === '7d' ? 7 : filterPeriod === '30d' ? 30 : 180
+    const limitDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1050) // buffer for timezone
+    return measurements.filter(m => new Date(m.logged_at) >= limitDate)
+  }
 
   const loadMeasurements = async () => {
     setLoadingMeasurements(true)
@@ -592,19 +601,60 @@ export default function ProfilPage() {
           {/* History List */}
           <div className="card">
             <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 12 }}>
-              📊 {t(lang, 'activityHistory')}
+              📊 {t(lang, 'measurementHistory' as any) || 'Messverlauf'}
             </h3>
+
+            {/* Period Filter Toggles */}
+            <div style={{
+              display: 'flex', gap: 4,
+              background: 'var(--bg-base)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: 2,
+              marginBottom: 12,
+            }}>
+              {(['7d', '30d', '180d', 'all'] as const).map(p => {
+                const label = p === '7d' ? (lang === 'de' ? 'Woche' : lang === 'ru' ? 'Неделя' : 'Week')
+                            : p === '30d' ? (lang === 'de' ? 'Monat' : lang === 'ru' ? 'Месяц' : 'Month')
+                            : p === '180d' ? (lang === 'de' ? '6 Mon.' : lang === 'ru' ? '6 мес.' : '6 Mon.')
+                            : (lang === 'de' ? 'Alle' : lang === 'ru' ? 'Все' : 'All')
+                const isActive = filterPeriod === p
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setFilterPeriod(p)}
+                    style={{
+                      flex: 1,
+                      padding: '5px 2px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: 'none',
+                      background: isActive ? 'var(--accent)' : 'transparent',
+                      color: isActive ? '#000' : 'var(--text-secondary)',
+                      fontWeight: 600,
+                      fontSize: '0.7rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
             {loadingMeasurements ? (
               <div className="flex justify-center py-6">
                 <Loader2 className="spin text-accent" size={24} />
               </div>
-            ) : measurements.length === 0 ? (
+            ) : getFilteredMeasurements().length === 0 ? (
               <p className="text-muted text-sm text-center py-4">
                 {t(lang, 'noMeasurementsYet')}
               </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {measurements.map(m => {
+                {getFilteredMeasurements().map(m => {
                   const mDate = new Date(m.logged_at)
                   const dateStr = mDate.toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-GB', {
                     day: '2-digit',
