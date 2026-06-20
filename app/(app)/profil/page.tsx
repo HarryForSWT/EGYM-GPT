@@ -22,6 +22,11 @@ type Profile = {
 
 type ActiveView = 'main' | 'personalInfo' | 'weight' | 'height' | 'bodyParams' | 'egymRounds' | 'restTimer' | 'password' | 'language'
 
+function formatKomma(val: number | string | null | undefined): string {
+  if (val == null || val === '') return '—'
+  return val.toString().replace('.', ',')
+}
+
 export default function ProfilPage() {
   const router   = useRouter()
   const supabase = createClient()
@@ -368,7 +373,7 @@ export default function ProfilPage() {
             <span className="settings-row-label">{t(lang, 'bodyHeight')}</span>
           </div>
           <div className="settings-row-right">
-            <span className="settings-row-value">{profile.height_cm ? `${profile.height_cm} cm` : '—'}</span>
+            <span className="settings-row-value">{profile.height_cm ? `${formatKomma(profile.height_cm)} cm` : '—'}</span>
             <ChevronRight size={18} className="settings-row-chevron" />
           </div>
         </button>
@@ -382,8 +387,8 @@ export default function ProfilPage() {
           </div>
           <div className="settings-row-right">
             <span className="settings-row-value">
-              {profile.weight_kg ? `${profile.weight_kg} kg` : '—'}
-              {profile.body_fat_percent ? ` · ${profile.body_fat_percent}%` : ''}
+              {profile.weight_kg ? `${formatKomma(profile.weight_kg)} kg` : '—'}
+              {profile.body_fat_percent ? ` · ${formatKomma(profile.body_fat_percent)}%` : ''}
             </span>
             <ChevronRight size={18} className="settings-row-chevron" />
           </div>
@@ -681,15 +686,15 @@ export default function ProfilPage() {
                       <div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{dateStr}</div>
                         <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: 2, display: 'flex', gap: 8 }}>
-                          <span>{m.weight_kg ? `${m.weight_kg} kg` : '—'}</span>
+                          <span>{m.weight_kg ? `${formatKomma(m.weight_kg)} kg` : '—'}</span>
                           {m.body_fat_percent !== null && (
                             <span className="text-secondary" style={{ fontWeight: 500 }}>
-                              · {m.body_fat_percent}% {lang === 'de' ? 'Fett' : lang === 'ru' ? 'жир' : 'fat'}
+                              · {formatKomma(m.body_fat_percent)}% {lang === 'de' ? 'Fett' : lang === 'ru' ? 'жир' : 'fat'}
                             </span>
                           )}
                           {bmi && (
                             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>
-                              · BMI: {bmi}
+                              · BMI: {formatKomma(bmi)}
                             </span>
                           )}
                         </div>

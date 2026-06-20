@@ -66,6 +66,11 @@ function getBmiClassification(bmi: number, lang: string) {
   return { text: t(lang as any, 'obese'), color: 'var(--danger)' }
 }
 
+function formatKomma(val: number | string | null | undefined): string {
+  if (val == null || val === '') return '—'
+  return val.toString().replace('.', ',')
+}
+
 export default function AnalysePage() {
   const supabase  = createClient()
   const { lang }  = useLang()
@@ -88,6 +93,20 @@ export default function AnalysePage() {
   const [userHeight, setUserHeight] = useState<number | null>(null)
   const [bmiVal, setBmiVal] = useState<number | null>(null)
   const [activeParamTab, setActiveParamTab] = useState<'weight' | 'bodyFat' | 'bmi'>('weight')
+  const [paramPeriod, setParamPeriod] = useState<'7d' | '30d' | '180d'>('30d')
+
+  const getFilteredBodyParams = () => {
+    const days = paramPeriod === '7d' ? 7 : paramPeriod === '30d' ? 30 : 180
+    const limitDate = new Date()
+    limitDate.setDate(limitDate.getDate() - days)
+    const chartPeriod = paramPeriod === '7d' ? '7d' : paramPeriod === '30d' ? '30d' : '180d'
+    return bodyParamsData
+      .filter(m => new Date(m.logged_at) >= limitDate)
+      .map(m => ({
+        ...m,
+        label: formatLabel(m.logged_at, chartPeriod as any)
+      }))
+  }
 
   const DONUT_COLORS = ['var(--accent)', '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444']
 
@@ -323,15 +342,14 @@ export default function AnalysePage() {
       const heightNum = profileData?.height_cm ? parseFloat(profileData.height_cm) : null
       setUserHeight(heightNum)
 
-      const { data: latestMeas } = await supabase
+      const { data: allMeas } = await supabase
         .from('body_measurements')
-        .select('weight_kg, body_fat_percent')
+        .select('id, weight_kg, body_fat_percent, logged_at')
         .eq('user_id', user.id)
-        .order('logged_at', { ascending: false })
-        .limit(2)
+        .order('logged_at', { ascending: true })
 
-      if (latestMeas && latestMeas.length > 0) {
-        const latest = latestMeas[0]
+      if (allMeas && allMeas.length > 0) {
+        const latest = allMeas[allMeas.length - 1]
         setLatestWeight(latest.weight_kg ? parseFloat(latest.weight_kg) : null)
         setLatestBodyFat(latest.body_fat_percent ? parseFloat(latest.body_fat_percent) : null)
 
@@ -342,8 +360,8 @@ export default function AnalysePage() {
           setBmiVal(null)
         }
 
-        if (latestMeas.length > 1) {
-          const prev = latestMeas[1]
+        if (allMeas.length > 1) {
+          const prev = allMeas[allMeas.length - 2]
           if (latest.weight_kg && prev.weight_kg) {
             setWeightTrendVal(parseFloat((latest.weight_kg - prev.weight_kg).toFixed(1)))
           } else {
@@ -366,15 +384,8 @@ export default function AnalysePage() {
         setBodyFatTrendVal(null)
       }
 
-      const { data: periodMeas } = await supabase
-        .from('body_measurements')
-        .select('id, weight_kg, body_fat_percent, logged_at')
-        .eq('user_id', user.id)
-        .gte('logged_at', since.toISOString())
-        .order('logged_at', { ascending: true })
-
-      if (periodMeas) {
-        const chartData = periodMeas.map(m => {
+      if (allMeas) {
+        const chartData = allMeas.map(m => {
           const w = m.weight_kg ? parseFloat(m.weight_kg) : null
           const f = m.body_fat_percent ? parseFloat(m.body_fat_percent) : null
           const b = (w && heightNum) ? parseFloat((w / Math.pow(heightNum / 100, 2)).toFixed(1)) : null
@@ -384,7 +395,7 @@ export default function AnalysePage() {
             body_fat_percent: f,
             bmi: b,
             logged_at: m.logged_at,
-            label: formatLabel(m.logged_at, period),
+            label: '',
           }
         })
         setBodyParamsData(chartData)
@@ -815,12 +826,12 @@ export default function AnalysePage() {
                     <div className="card text-center" style={{ padding: '8px', background: 'var(--bg-base)' }}>
                       <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{t(lang, 'weightTrend')}</div>
                       <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginTop: 4 }}>
-                        {latestWeight ? `${latestWeight} kg` : '—'}
+                        {latestWeight ? `${formatKomma(latestWeight)} kg` : '—'}
                       </div>
                       <div style={{ fontSize: '0.62rem', marginTop: 2 }}>
                         {weightTrendVal !== null ? (
                           <span style={{ color: weightTrendVal < 0 ? 'var(--success)' : weightTrendVal > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
-                            {weightTrendVal > 0 ? `+${weightTrendVal}` : weightTrendVal} kg
+                            {weightTrendVal > 0 ? '+' : ''}{formatKomma(weightTrendVal)} kg
                           </span>
                         ) : (
                           <span className="text-muted">—</span>
@@ -832,12 +843,12 @@ export default function AnalysePage() {
                     <div className="card text-center" style={{ padding: '8px', background: 'var(--bg-base)' }}>
                       <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{t(lang, 'bodyFatTrend')}</div>
                       <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginTop: 4 }}>
-                        {latestBodyFat ? `${latestBodyFat}%` : '—'}
+                        {latestBodyFat ? `${formatKomma(latestBodyFat)}%` : '—'}
                       </div>
                       <div style={{ fontSize: '0.62rem', marginTop: 2 }}>
                         {bodyFatTrendVal !== null ? (
                           <span style={{ color: bodyFatTrendVal < 0 ? 'var(--success)' : bodyFatTrendVal > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
-                            {bodyFatTrendVal > 0 ? `+${bodyFatTrendVal}` : bodyFatTrendVal}%
+                            {bodyFatTrendVal > 0 ? '+' : ''}{formatKomma(bodyFatTrendVal)}%
                           </span>
                         ) : (
                           <span className="text-muted">—</span>
@@ -849,7 +860,7 @@ export default function AnalysePage() {
                     <div className="card text-center" style={{ padding: '8px', background: 'var(--bg-base)' }}>
                       <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{t(lang, 'currentBmi')}</div>
                       <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginTop: 4 }}>
-                        {bmiVal ? bmiVal : '—'}
+                        {bmiVal ? formatKomma(bmiVal) : '—'}
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
                         {bmiVal ? (
@@ -892,45 +903,85 @@ export default function AnalysePage() {
                   )}
 
                   {/* Parameter Chart Toggles */}
-                  <div style={{
-                    display: 'flex', gap: 6,
-                    background: 'var(--bg-base)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-lg)',
-                    padding: 3,
-                    marginBottom: 12,
-                  }}>
-                    {(['weight', 'bodyFat', 'bmi'] as const).map(tab => {
-                      const isActive = activeParamTab === tab;
-                      return (
-                        <button
-                          key={tab}
-                          type="button"
-                          onClick={() => setActiveParamTab(tab)}
-                          style={{
-                            flex: 1,
-                            padding: '6px 4px',
-                            borderRadius: 'var(--radius-md)',
-                            border: 'none',
-                            background: isActive ? 'var(--accent)' : 'transparent',
-                            color: isActive ? '#000' : 'var(--text-secondary)',
-                            fontWeight: 600,
-                            fontSize: '0.72rem',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          {tab === 'weight' ? t(lang, 'weightTrend') : tab === 'bodyFat' ? t(lang, 'bodyFatTrend') : t(lang, 'bmiTrend')}
-                        </button>
-                      );
-                    })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    {/* Metric Toggle */}
+                    <div style={{
+                      display: 'flex', gap: 6,
+                      background: 'var(--bg-base)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: 3,
+                    }}>
+                      {(['weight', 'bodyFat', 'bmi'] as const).map(tab => {
+                        const isActive = activeParamTab === tab;
+                        return (
+                          <button
+                            key={tab}
+                            type="button"
+                            onClick={() => setActiveParamTab(tab)}
+                            style={{
+                              flex: 1,
+                              padding: '6px 4px',
+                              borderRadius: 'var(--radius-md)',
+                              border: 'none',
+                              background: isActive ? 'var(--accent)' : 'transparent',
+                              color: isActive ? '#000' : 'var(--text-secondary)',
+                              fontWeight: 600,
+                              fontSize: '0.72rem',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            {tab === 'weight' ? t(lang, 'weightTrend') : tab === 'bodyFat' ? t(lang, 'bodyFatTrend') : t(lang, 'bmiTrend')}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Period Toggle */}
+                    <div style={{
+                      display: 'flex', gap: 6,
+                      background: 'var(--bg-base)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: 3,
+                    }}>
+                      {(['7d', '30d', '180d'] as const).map(p => {
+                        const label = p === '7d' ? (lang === 'de' ? 'Woche' : lang === 'ru' ? 'Неделя' : 'Week')
+                                    : p === '30d' ? (lang === 'de' ? 'Monat' : lang === 'ru' ? 'Месяц' : 'Month')
+                                    : (lang === 'de' ? '6 Monate' : lang === 'ru' ? '6 месяцев' : '6 Months')
+                        const isActive = paramPeriod === p;
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setParamPeriod(p)}
+                            style={{
+                              flex: 1,
+                              padding: '6px 4px',
+                              borderRadius: 'var(--radius-md)',
+                              border: 'none',
+                              background: isActive ? 'var(--accent)' : 'transparent',
+                              color: isActive ? '#000' : 'var(--text-secondary)',
+                              fontWeight: 600,
+                              fontSize: '0.72rem',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Chart Rendering */}
                   {(() => {
                     const currentKey = activeParamTab === 'weight' ? 'weight_kg' : activeParamTab === 'bodyFat' ? 'body_fat_percent' : 'bmi';
-                    const activeChartData = bodyParamsData.filter(d => d[currentKey] !== null);
+                    const activeChartData = getFilteredBodyParams().filter(d => d[currentKey] !== null);
                     
                     if (activeChartData.length < 2) {
                       return (
@@ -955,6 +1006,7 @@ export default function AnalysePage() {
                           />
                           <YAxis
                             tick={{ fill: 'var(--text-muted)', fontSize: 9 }}
+                            tickFormatter={v => formatKomma(v)}
                             axisLine={false}
                             tickLine={false}
                             width={32}
@@ -969,7 +1021,7 @@ export default function AnalysePage() {
                               color: 'var(--text-primary)',
                               fontSize: '0.75rem',
                             }}
-                            formatter={(v: any) => [`${v}${unit}`, '']}
+                            formatter={(v: any) => [`${formatKomma(v)}${unit}`, '']}
                           />
                           <Line
                             type="monotone"
