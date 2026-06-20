@@ -67,6 +67,7 @@ export default function AnalysePage() {
   const [maxKraftStats, setMaxKraftStats] = useState<ExerciseStat[]>([])
   const [volumeStats, setVolumeStats] = useState<ExerciseStat[]>([])
   const [distributionData, setDistributionData] = useState<{ name: string; value: number }[]>([])
+  const [cardioDistributionData, setCardioDistributionData] = useState<{ name: string; value: number }[]>([])
   const [chartMode, setChartMode] = useState<'training' | 'maxKraft' | 'volume'>('training')
   const [loading, setLoading] = useState(true)
   const [activeEx, setActiveEx] = useState<string | null>(null)
@@ -114,14 +115,16 @@ export default function AnalysePage() {
 
       const { data: exercises } = await supabase
         .from('exercises')
-        .select('id, name, muscle_group')
+        .select('id, name, muscle_group, type')
         .in('id', exIds)
 
       const exMap: Record<string, string> = {}
       const exMuscleMap: Record<string, string> = {}
+      const exTypeMap: Record<string, string> = {}
       exercises?.forEach(e => {
         exMap[e.id] = e.name
         exMuscleMap[e.id] = e.muscle_group ?? ''
+        exTypeMap[e.id] = e.type ?? 'classic'
       })
 
       // Pro Übung: nach Datum gruppieren, max(weight_kg) pro Tag für Trainingsgewicht
@@ -135,28 +138,30 @@ export default function AnalysePage() {
         byExTraining[r.exercise_id][day].push(r.weight_kg)
       })
 
-      const trainingResult: ExerciseStat[] = Object.entries(byExTraining).map(([exId, days]) => {
-        const data = Object.entries(days)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([day, weights]) => ({
-            label: formatLabel(day, period),
-            maxKg: Math.max(...weights),
-            date:  day,
-          }))
+      const trainingResult: ExerciseStat[] = Object.entries(byExTraining)
+        .filter(([exId]) => exTypeMap[exId] !== 'cardio')
+        .map(([exId, days]) => {
+          const data = Object.entries(days)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([day, weights]) => ({
+              label: formatLabel(day, period),
+              maxKg: Math.max(...weights),
+              date:  day,
+            }))
 
-        const allWeights = data.map(d => d.maxKg)
-        const pb   = Math.max(...allWeights)
-        const last = data[data.length - 1]?.maxKg ?? 0
+          const allWeights = data.map(d => d.maxKg)
+          const pb   = Math.max(...allWeights)
+          const last = data[data.length - 1]?.maxKg ?? 0
 
-        return {
-          id: exId,
-          name: exMap[exId] ?? exId,
-          data,
-          pb,
-          last,
-          sessions: data.length,
-        }
-      })
+          return {
+            id: exId,
+            name: exMap[exId] ?? exId,
+            data,
+            pb,
+            last,
+            sessions: data.length,
+          }
+        })
       trainingResult.sort((a, b) => b.sessions - a.sessions)
 
       // Pro Übung: nach Datum gruppieren, max(weight_kg) pro Tag für Maximalkraft
@@ -168,28 +173,30 @@ export default function AnalysePage() {
         byExMaxKraft[r.exercise_id][day].push(r.weight_kg)
       })
 
-      const maxKraftResult: ExerciseStat[] = Object.entries(byExMaxKraft).map(([exId, days]) => {
-        const data = Object.entries(days)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([day, weights]) => ({
-            label: formatLabel(day, period),
-            maxKg: Math.max(...weights),
-            date:  day,
-          }))
+      const maxKraftResult: ExerciseStat[] = Object.entries(byExMaxKraft)
+        .filter(([exId]) => exTypeMap[exId] !== 'cardio')
+        .map(([exId, days]) => {
+          const data = Object.entries(days)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([day, weights]) => ({
+              label: formatLabel(day, period),
+              maxKg: Math.max(...weights),
+              date:  day,
+            }))
 
-        const allWeights = data.map(d => d.maxKg)
-        const pb   = Math.max(...allWeights)
-        const last = data[data.length - 1]?.maxKg ?? 0
+          const allWeights = data.map(d => d.maxKg)
+          const pb   = Math.max(...allWeights)
+          const last = data[data.length - 1]?.maxKg ?? 0
 
-        return {
-          id: exId,
-          name: exMap[exId] ?? exId,
-          data,
-          pb,
-          last,
-          sessions: data.length,
-        }
-      })
+          return {
+            id: exId,
+            name: exMap[exId] ?? exId,
+            data,
+            pb,
+            last,
+            sessions: data.length,
+          }
+        })
       maxKraftResult.sort((a, b) => b.sessions - a.sessions)
 
       setTrainingStats(trainingResult)
@@ -206,38 +213,57 @@ export default function AnalysePage() {
         byExVolume[r.exercise_id][day] += (r.weight_kg * (r.reps || 0))
       })
 
-      const volumeResult: ExerciseStat[] = Object.entries(byExVolume).map(([exId, days]) => {
-        const data = Object.entries(days)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([day, vol]) => ({
-            label: formatLabel(day, period),
-            maxKg: Math.round(vol),
-            date:  day,
-          }))
+      const volumeResult: ExerciseStat[] = Object.entries(byExVolume)
+        .filter(([exId]) => exTypeMap[exId] !== 'cardio')
+        .map(([exId, days]) => {
+          const data = Object.entries(days)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([day, vol]) => ({
+              label: formatLabel(day, period),
+              maxKg: Math.round(vol),
+              date:  day,
+            }))
 
-        const allVols = data.map(d => d.maxKg)
-        const pb   = Math.max(...allVols)
-        const last = data[data.length - 1]?.maxKg ?? 0
+          const allVols = data.map(d => d.maxKg)
+          const pb   = Math.max(...allVols)
+          const last = data[data.length - 1]?.maxKg ?? 0
 
-        return {
-          id: exId,
-          name: exMap[exId] ?? exId,
-          data,
-          pb,
-          last,
-          sessions: data.length,
-        }
-      })
+          return {
+            id: exId,
+            name: exMap[exId] ?? exId,
+            data,
+            pb,
+            last,
+            sessions: data.length,
+          }
+        })
       volumeResult.sort((a, b) => b.sessions - a.sessions)
       setVolumeStats(volumeResult)
 
-      // Muskelgruppen-Verteilung
+      // Muskelgruppen-Verteilung (nur für Krafttraining)
       const muscleCounts: Record<string, number> = {}
       rows?.forEach(r => {
+        const type = exTypeMap[r.exercise_id]
+        if (type === 'cardio') return
         const mg = exMuscleMap[r.exercise_id]
         if (!mg) return
         muscleCounts[mg] = (muscleCounts[mg] || 0) + 1
       })
+
+      // Cardio-Verteilung (nur für Cardio)
+      const cardioCounts: Record<string, number> = {}
+      rows?.forEach(r => {
+        const type = exTypeMap[r.exercise_id]
+        if (type !== 'cardio') return
+        const name = exMap[r.exercise_id] || r.exercise_id
+        cardioCounts[name] = (cardioCounts[name] || 0) + 1
+      })
+
+      const cardioDist = Object.entries(cardioCounts).map(([name, value]) => ({
+        name,
+        value
+      })).sort((a, b) => b.value - a.value)
+      setCardioDistributionData(cardioDist)
 
       const translateMuscleGroup = (mg: string) => {
         switch (mg.toLowerCase()) {
@@ -604,6 +630,63 @@ export default function AnalysePage() {
                         <div key={entry.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <div style={{ width: 8, height: 8, borderRadius: '50%', background: DONUT_COLORS[index % DONUT_COLORS.length] }} />
+                            <span style={{ fontWeight: 500 }}>{entry.name}</span>
+                          </div>
+                          <span className="text-muted" style={{ fontWeight: 600 }}>{pct}%</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Donut Chart - Cardio Exercise Distribution */}
+          {cardioDistributionData.length > 0 && (
+            <div className="px-4 mb-6 animate-fade-in">
+              <div className="card" style={{ padding: '16px' }}>
+                <p style={{ fontWeight: 600, fontSize: '0.88rem', marginBottom: 16, color: 'var(--text-secondary)' }}>
+                  🏃‍♂️ {lang === 'de' ? 'Ausdauer-Verteilung' : lang === 'ru' ? 'Распределение кардио' : 'Cardio Distribution'}
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 16 }}>
+                  <div style={{ width: '130px', height: '130px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={cardioDistributionData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={38}
+                          outerRadius={58}
+                          paddingAngle={3}
+                          dataKey="value"
+                        >
+                          {cardioDistributionData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={DONUT_COLORS[(index + 3) % DONUT_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{
+                            background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.75rem',
+                          }}
+                          formatter={(v: any) => [`${v} ${v === 1 ? (lang === 'de' ? 'Eintrag' : lang === 'ru' ? 'запись' : 'entry') : (lang === 'de' ? 'Einträge' : lang === 'ru' ? 'записей' : 'entries')}`, '']}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: '130px' }}>
+                    {cardioDistributionData.map((entry, index) => {
+                      const totalCardio = cardioDistributionData.reduce((sum, d) => sum + d.value, 0)
+                      const pct = Math.round((entry.value / totalCardio) * 100)
+                      return (
+                        <div key={entry.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: DONUT_COLORS[(index + 3) % DONUT_COLORS.length] }} />
                             <span style={{ fontWeight: 500 }}>{entry.name}</span>
                           </div>
                           <span className="text-muted" style={{ fontWeight: 600 }}>{pct}%</span>
