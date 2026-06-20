@@ -248,6 +248,8 @@ export default function AnalysePage() {
           case 'brust': return t(lang, 'muscleChest')
           case 'bauch': return t(lang, 'muscleAbs')
           case 'beine': return t(lang, 'muscleLegs')
+          case 'waden': return t(lang, 'muscleCalves')
+          case 'ausdauer': return t(lang, 'muscleCardio')
           default: return mg
         }
       }

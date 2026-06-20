@@ -44,17 +44,20 @@ export default function Home() {
     const exIds = new Set(wSets.map(s => s.exercise_id))
     const egymSets = wSets.filter(s => s.exercise?.type === 'egym')
     const classicSets = wSets.filter(s => s.exercise?.type === 'classic')
+    const cardioSets = wSets.filter(s => s.exercise?.type === 'cardio')
     
     const egymCal = egymSets.length * 1.5 * 5.5 * weight / 60
     const classicCal = classicSets.length * 2.5 * 4.0 * weight / 60
-    const kcal = Math.round(egymCal + classicCal)
+    const cardioCal = cardioSets.reduce((sum, s) => sum + (s.active_kcal || s.total_kcal || 0), 0)
+    const kcal = Math.round(egymCal + classicCal + cardioCal)
 
     const volume = Math.round(wSets.reduce((sum, s) => sum + (parseFloat(s.weight_kg?.toString().replace(',', '.') || '0') * parseInt(s.reps?.toString() || '0', 10)), 0))
     
-    let typeLabel = 'Gym'
-    if (egymSets.length > 0 && classicSets.length > 0) typeLabel = 'EGYM & Classic'
-    else if (egymSets.length > 0) typeLabel = 'EGYM Zirkel'
-    else if (classicSets.length > 0) typeLabel = 'Classic'
+    const activeTypes: string[] = []
+    if (egymSets.length > 0) activeTypes.push('EGYM')
+    if (classicSets.length > 0) activeTypes.push('Classic')
+    if (cardioSets.length > 0) activeTypes.push(lang === 'de' ? 'Ausdauer' : lang === 'ru' ? 'Кардио' : 'Cardio')
+    const typeLabel = activeTypes.join(' & ') || 'Gym'
 
     const trainedMusclesSet = new Set<string>()
     wSets.forEach(s => {
@@ -89,7 +92,7 @@ export default function Home() {
 
       const { data: recWorkouts } = await supabase
         .from('workouts')
-        .select('id, start_time, status, completed_at, sets(exercise_id, weight_kg, reps, exercise:exercises(type, name, muscle_group))')
+        .select('id, start_time, status, completed_at, sets(exercise_id, weight_kg, reps, active_kcal, total_kcal, exercise:exercises(type, name, muscle_group))')
         .eq('user_id', user.id)
         .gte('start_time', startOfMonth.toISOString())
         .lte('start_time', endOfMonth.toISOString())
@@ -199,6 +202,16 @@ export default function Home() {
             <div>
               <h3 style={{ fontSize: '1rem', marginBottom: 2 }}>{t(lang, 'classicTraining')}</h3>
               <p className="text-secondary" style={{ fontSize: '0.8rem' }}>{t(lang, 'freeWeights')}</p>
+            </div>
+            <ChevronRight size={20} className="text-muted" />
+          </div>
+        </Link>
+
+        <Link href="/cardio" style={{ textDecoration: 'none' }}>
+          <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ fontSize: '1rem', marginBottom: 2 }}>{t(lang, 'cardioTraining')}</h3>
+              <p className="text-secondary" style={{ fontSize: '0.8rem' }}>{t(lang, 'cardioDesc')}</p>
             </div>
             <ChevronRight size={20} className="text-muted" />
           </div>

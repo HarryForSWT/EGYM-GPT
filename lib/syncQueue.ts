@@ -4,9 +4,21 @@ export type SetPayload = {
   workout_id: string
   exercise_id: string
   round_number: number
-  weight_kg: number
-  reps: number
+  weight_kg?: number
+  reps?: number
   created_at?: string
+  duration_seconds?: number
+  elapsed_seconds?: number
+  distance_m?: number
+  active_kcal?: number
+  total_kcal?: number
+  elevation_gain_m?: number
+  avg_speed_kmh?: number
+  avg_pace?: string
+  avg_heart_rate_bpm?: number
+  laps?: number
+  pool_length_m?: number
+  avg_cadence_spm?: number
 }
 
 const QUEUE_KEY = 'egym_offline_sets_queue'
