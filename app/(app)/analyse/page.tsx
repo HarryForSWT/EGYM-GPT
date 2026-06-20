@@ -59,6 +59,13 @@ function formatLabel(dateStr: string, period: Period) {
   return d.toLocaleDateString('de-DE', { month: 'short', day: '2-digit' })
 }
 
+function getBmiClassification(bmi: number, lang: string) {
+  if (bmi < 18.5) return { text: t(lang as any, 'underweight'), color: '#3b82f6' }
+  if (bmi < 25.0) return { text: t(lang as any, 'normalWeight'), color: '#10b981' }
+  if (bmi < 30.0) return { text: t(lang as any, 'overweight'), color: '#f59e0b' }
+  return { text: t(lang as any, 'obese'), color: 'var(--danger)' }
+}
+
 export default function AnalysePage() {
   const supabase  = createClient()
   const { lang }  = useLang()
@@ -71,6 +78,16 @@ export default function AnalysePage() {
   const [chartMode, setChartMode] = useState<'training' | 'maxKraft' | 'volume'>('training')
   const [loading, setLoading] = useState(true)
   const [activeEx, setActiveEx] = useState<string | null>(null)
+
+  // Body Parameters States
+  const [bodyParamsData, setBodyParamsData] = useState<{ id: string; weight_kg: number | null; body_fat_percent: number | null; bmi: number | null; logged_at: string; label: string }[]>([])
+  const [latestWeight, setLatestWeight] = useState<number | null>(null)
+  const [weightTrendVal, setWeightTrendVal] = useState<number | null>(null)
+  const [latestBodyFat, setLatestBodyFat] = useState<number | null>(null)
+  const [bodyFatTrendVal, setBodyFatTrendVal] = useState<number | null>(null)
+  const [userHeight, setUserHeight] = useState<number | null>(null)
+  const [bmiVal, setBmiVal] = useState<number | null>(null)
+  const [activeParamTab, setActiveParamTab] = useState<'weight' | 'bodyFat' | 'bmi'>('weight')
 
   const DONUT_COLORS = ['var(--accent)', '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444']
 
@@ -296,6 +313,86 @@ export default function AnalysePage() {
           setActiveEx(trainingResult[0]?.id ?? maxKraftResult[0]?.id ?? volumeResult[0]?.id ?? null)
         }
       }
+
+      // --- Body Parameters Fetching ---
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('height_cm')
+        .eq('id', user.id)
+        .single()
+      const heightNum = profileData?.height_cm ? parseFloat(profileData.height_cm) : null
+      setUserHeight(heightNum)
+
+      const { data: latestMeas } = await supabase
+        .from('body_measurements')
+        .select('weight_kg, body_fat_percent')
+        .eq('user_id', user.id)
+        .order('logged_at', { ascending: false })
+        .limit(2)
+
+      if (latestMeas && latestMeas.length > 0) {
+        const latest = latestMeas[0]
+        setLatestWeight(latest.weight_kg ? parseFloat(latest.weight_kg) : null)
+        setLatestBodyFat(latest.body_fat_percent ? parseFloat(latest.body_fat_percent) : null)
+
+        if (latest.weight_kg && heightNum) {
+          const calcBmi = latest.weight_kg / Math.pow(heightNum / 100, 2)
+          setBmiVal(parseFloat(calcBmi.toFixed(1)))
+        } else {
+          setBmiVal(null)
+        }
+
+        if (latestMeas.length > 1) {
+          const prev = latestMeas[1]
+          if (latest.weight_kg && prev.weight_kg) {
+            setWeightTrendVal(parseFloat((latest.weight_kg - prev.weight_kg).toFixed(1)))
+          } else {
+            setWeightTrendVal(null)
+          }
+          if (latest.body_fat_percent !== null && prev.body_fat_percent !== null) {
+            setBodyFatTrendVal(parseFloat((latest.body_fat_percent - prev.body_fat_percent).toFixed(1)))
+          } else {
+            setBodyFatTrendVal(null)
+          }
+        } else {
+          setWeightTrendVal(null)
+          setBodyFatTrendVal(null)
+        }
+      } else {
+        setLatestWeight(null)
+        setLatestBodyFat(null)
+        setBmiVal(null)
+        setWeightTrendVal(null)
+        setBodyFatTrendVal(null)
+      }
+
+      const { data: periodMeas } = await supabase
+        .from('body_measurements')
+        .select('id, weight_kg, body_fat_percent, logged_at')
+        .eq('user_id', user.id)
+        .gte('logged_at', since.toISOString())
+        .order('logged_at', { ascending: true })
+
+      if (periodMeas) {
+        const chartData = periodMeas.map(m => {
+          const w = m.weight_kg ? parseFloat(m.weight_kg) : null
+          const f = m.body_fat_percent ? parseFloat(m.body_fat_percent) : null
+          const b = (w && heightNum) ? parseFloat((w / Math.pow(heightNum / 100, 2)).toFixed(1)) : null
+          return {
+            id: m.id,
+            weight_kg: w,
+            body_fat_percent: f,
+            bmi: b,
+            logged_at: m.logged_at,
+            label: formatLabel(m.logged_at, period),
+          }
+        })
+        setBodyParamsData(chartData)
+      } else {
+        setBodyParamsData([])
+      }
+      // ---------------------------------
+
       setLoading(false)
     }
     load()
@@ -698,6 +795,198 @@ export default function AnalysePage() {
               </div>
             </div>
           )}
+
+          {/* Body Parameters Section */}
+          <div className="px-4 mb-6 animate-fade-in">
+            <div className="card" style={{ padding: '16px' }}>
+              <p style={{ fontWeight: 600, fontSize: '0.88rem', marginBottom: 16, color: 'var(--text-secondary)' }}>
+                ⚖️ {t(lang, 'bodyParams')}
+              </p>
+              
+              {!latestWeight && !latestBodyFat ? (
+                <div className="text-center py-4">
+                  <p className="text-muted text-sm">{t(lang, 'noMeasurementsYet')}</p>
+                </div>
+              ) : (
+                <>
+                  {/* KPI Row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
+                    {/* Weight Card */}
+                    <div className="card text-center" style={{ padding: '8px', background: 'var(--bg-base)' }}>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{t(lang, 'weightTrend')}</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginTop: 4 }}>
+                        {latestWeight ? `${latestWeight} kg` : '—'}
+                      </div>
+                      <div style={{ fontSize: '0.62rem', marginTop: 2 }}>
+                        {weightTrendVal !== null ? (
+                          <span style={{ color: weightTrendVal < 0 ? 'var(--success)' : weightTrendVal > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                            {weightTrendVal > 0 ? `+${weightTrendVal}` : weightTrendVal} kg
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Body Fat Card */}
+                    <div className="card text-center" style={{ padding: '8px', background: 'var(--bg-base)' }}>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{t(lang, 'bodyFatTrend')}</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginTop: 4 }}>
+                        {latestBodyFat ? `${latestBodyFat}%` : '—'}
+                      </div>
+                      <div style={{ fontSize: '0.62rem', marginTop: 2 }}>
+                        {bodyFatTrendVal !== null ? (
+                          <span style={{ color: bodyFatTrendVal < 0 ? 'var(--success)' : bodyFatTrendVal > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                            {bodyFatTrendVal > 0 ? `+${bodyFatTrendVal}` : bodyFatTrendVal}%
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* BMI Card */}
+                    <div className="card text-center" style={{ padding: '8px', background: 'var(--bg-base)' }}>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{t(lang, 'currentBmi')}</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginTop: 4 }}>
+                        {bmiVal ? bmiVal : '—'}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
+                        {bmiVal ? (
+                          (() => {
+                            const classification = getBmiClassification(bmiVal, lang);
+                            return (
+                              <span style={{
+                                fontSize: '0.55rem',
+                                fontWeight: 700,
+                                padding: '1px 4px',
+                                borderRadius: 4,
+                                background: `${classification.color}22`,
+                                color: classification.color,
+                                border: `1px solid ${classification.color}33`,
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {classification.text}
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-muted" style={{ fontSize: '0.55rem' }}>—</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {!userHeight && (
+                    <div style={{
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      background: '#f59e0b11',
+                      border: '1px solid #f59e0b33',
+                      fontSize: '0.72rem',
+                      color: '#f59e0b',
+                      marginBottom: 12,
+                    }}>
+                      ⚠️ {t(lang, 'heightMissingHint')}
+                    </div>
+                  )}
+
+                  {/* Parameter Chart Toggles */}
+                  <div style={{
+                    display: 'flex', gap: 6,
+                    background: 'var(--bg-base)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: 3,
+                    marginBottom: 12,
+                  }}>
+                    {(['weight', 'bodyFat', 'bmi'] as const).map(tab => {
+                      const isActive = activeParamTab === tab;
+                      return (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setActiveParamTab(tab)}
+                          style={{
+                            flex: 1,
+                            padding: '6px 4px',
+                            borderRadius: 'var(--radius-md)',
+                            border: 'none',
+                            background: isActive ? 'var(--accent)' : 'transparent',
+                            color: isActive ? '#000' : 'var(--text-secondary)',
+                            fontWeight: 600,
+                            fontSize: '0.72rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          {tab === 'weight' ? t(lang, 'weightTrend') : tab === 'bodyFat' ? t(lang, 'bodyFatTrend') : t(lang, 'bmiTrend')}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Chart Rendering */}
+                  {(() => {
+                    const currentKey = activeParamTab === 'weight' ? 'weight_kg' : activeParamTab === 'bodyFat' ? 'body_fat_percent' : 'bmi';
+                    const activeChartData = bodyParamsData.filter(d => d[currentKey] !== null);
+                    
+                    if (activeChartData.length < 2) {
+                      return (
+                        <p className="text-muted text-xs text-center py-4">
+                          {t(lang, 'tooFewData')}
+                        </p>
+                      );
+                    }
+
+                    const strokeColor = activeParamTab === 'weight' ? 'var(--accent)' : activeParamTab === 'bodyFat' ? '#ec4899' : '#3b82f6';
+                    const unit = activeParamTab === 'weight' ? ' kg' : activeParamTab === 'bodyFat' ? '%' : '';
+
+                    return (
+                      <ResponsiveContainer width="100%" height={160}>
+                        <LineChart data={activeChartData}>
+                          <CartesianGrid vertical={false} stroke="var(--border)" />
+                          <XAxis
+                            dataKey="label"
+                            tick={{ fill: 'var(--text-muted)', fontSize: 9 }}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <YAxis
+                            tick={{ fill: 'var(--text-muted)', fontSize: 9 }}
+                            axisLine={false}
+                            tickLine={false}
+                            width={32}
+                            unit={unit}
+                            domain={['auto', 'auto']}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              background: 'var(--bg-elevated)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 'var(--radius-sm)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.75rem',
+                            }}
+                            formatter={(v: any) => [`${v}${unit}`, '']}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey={currentKey}
+                            stroke={strokeColor}
+                            strokeWidth={2.5}
+                            dot={{ r: 3, fill: 'var(--bg-surface)', stroke: strokeColor, strokeWidth: 1.5 }}
+                            activeDot={{ r: 5, fill: strokeColor }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+          </div>
         </>
       )}
 

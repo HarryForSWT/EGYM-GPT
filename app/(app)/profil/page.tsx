@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { LogOut, User, Moon, Sun, ChevronRight, ChevronLeft, Check, Loader2, Globe, Lock, Scale, Timer, Dumbbell } from 'lucide-react'
+import { LogOut, User, Moon, Sun, ChevronRight, ChevronLeft, Check, Loader2, Globe, Lock, Scale, Timer, Dumbbell, Trash2, Plus } from 'lucide-react'
 import { useLang } from '@/lib/LanguageContext'
 import { t, LANG_LABELS, type Lang, setStoredLang } from '@/lib/i18n'
 
@@ -14,11 +14,13 @@ type Profile = {
   nickname:     string
   language:     Lang
   weight_kg:    string
+  body_fat_percent: string
+  height_cm:    string
   egym_rounds:  string
   rest_timer_seconds: string
 }
 
-type ActiveView = 'main' | 'personalInfo' | 'weight' | 'egymRounds' | 'restTimer' | 'password' | 'language'
+type ActiveView = 'main' | 'personalInfo' | 'weight' | 'height' | 'bodyParams' | 'egymRounds' | 'restTimer' | 'password' | 'language'
 
 export default function ProfilPage() {
   const router   = useRouter()
@@ -27,7 +29,7 @@ export default function ProfilPage() {
   const { lang, setLang }   = useLang()
   const [theme, setTheme]   = useState<'dark' | 'light'>('light')
   const [profile, setProfile] = useState<Profile>({
-    display_name: '', first_name: '', last_name: '', nickname: '', language: 'de', weight_kg: '', egym_rounds: '3', rest_timer_seconds: '90',
+    display_name: '', first_name: '', last_name: '', nickname: '', language: 'de', weight_kg: '', body_fat_percent: '', height_cm: '', egym_rounds: '3', rest_timer_seconds: '90',
   })
   const [loading, setLoading]   = useState(true)
   
@@ -43,6 +45,118 @@ export default function ProfilPage() {
   const [pwError, setPwError] = useState('')
   const [pwSuccess, setPwSuccess] = useState(false)
 
+  // Body Measurements states
+  const [measurements, setMeasurements] = useState<{ id: string; weight_kg: number; body_fat_percent: number | null; logged_at: string }[]>([])
+  const [loadingMeasurements, setLoadingMeasurements] = useState(false)
+  const [newWeight, setNewWeight] = useState('')
+  const [newBodyFat, setNewBodyFat] = useState('')
+  const [newLoggedAt, setNewLoggedAt] = useState('')
+  const [savingMeasurement, setSavingMeasurement] = useState(false)
+  const [saveMeasurementError, setSaveMeasurementError] = useState('')
+  const [deletingMeasurementId, setDeletingMeasurementId] = useState<string | null>(null)
+
+  const loadMeasurements = async () => {
+    setLoadingMeasurements(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setLoadingMeasurements(false); return }
+    const { data } = await supabase
+      .from('body_measurements')
+      .select('id, weight_kg, body_fat_percent, logged_at')
+      .eq('user_id', user.id)
+      .order('logged_at', { ascending: false })
+    if (data) {
+      setMeasurements(data)
+    }
+    setLoadingMeasurements(false)
+  }
+
+  useEffect(() => {
+    if (activeView === 'bodyParams') {
+      loadMeasurements()
+      const todayStr = new Date().toLocaleDateString('sv-SE') // Reliable YYYY-MM-DD local format
+      setNewLoggedAt(todayStr)
+      setNewWeight(profile.weight_kg)
+      setNewBodyFat('')
+      setSaveMeasurementError('')
+    }
+  }, [activeView])
+
+  const handleAddMeasurement = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingMeasurement(true)
+    setSaveMeasurementError('')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSavingMeasurement(false); return }
+
+    const wVal = newWeight ? parseFloat(newWeight) : null
+    const fVal = newBodyFat ? parseFloat(newBodyFat) : null
+    
+    if (wVal === null && fVal === null) {
+      setSaveMeasurementError(lang === 'de' ? 'Bitte gib mindestens ein Gewicht oder Körperfett an.' : 'Please enter at least weight or body fat.')
+      setSavingMeasurement(false)
+      return
+    }
+
+    const [year, month, day] = newLoggedAt.split('-').map(Number)
+    const localTime = new Date()
+    localTime.setFullYear(year, month - 1, day)
+
+    const { error } = await supabase.from('body_measurements').insert({
+      user_id: user.id,
+      weight_kg: wVal,
+      body_fat_percent: fVal,
+      logged_at: localTime.toISOString()
+    })
+
+    if (error) {
+      setSaveMeasurementError(error.message)
+    } else {
+      setNewBodyFat('')
+      await loadMeasurements()
+      
+      // Update local profile weight and body fat
+      const latestW = wVal !== null ? wVal.toString() : profile.weight_kg
+      const latestF = fVal !== null ? fVal.toString() : profile.body_fat_percent
+      setProfile(p => ({
+        ...p,
+        weight_kg: latestW,
+        body_fat_percent: latestF
+      }))
+      setDraft(d => ({
+        ...d,
+        weight_kg: latestW,
+        body_fat_percent: latestF
+      }))
+    }
+    setSavingMeasurement(false)
+  }
+
+  const handleDeleteMeasurement = async (id: string) => {
+    if (!confirm(lang === 'de' ? 'Eintrag wirklich löschen?' : 'Delete this entry?')) return
+    setDeletingMeasurementId(id)
+    const { error } = await supabase.from('body_measurements').delete().eq('id', id)
+    if (!error) {
+      setMeasurements(m => m.filter(item => item.id !== id))
+      
+      // Sync local profile weight and body fat with DB (since trigger changed it)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('weight_kg, body_fat_percent')
+          .eq('id', user.id)
+          .single()
+        if (data) {
+          const w = data.weight_kg?.toString() ?? ''
+          const f = data.body_fat_percent?.toString() ?? ''
+          setProfile(p => ({ ...p, weight_kg: w, body_fat_percent: f }))
+          setDraft(d => ({ ...d, weight_kg: w, body_fat_percent: f }))
+        }
+      }
+    }
+    setDeletingMeasurementId(null)
+  }
+
   useEffect(() => {
     const storedTheme = (localStorage.getItem('theme') as 'dark' | 'light') ?? 'light'
     setTheme(storedTheme)
@@ -53,7 +167,7 @@ export default function ProfilPage() {
       if (!user) return
       const { data } = await supabase
         .from('profiles')
-        .select('display_name, first_name, last_name, nickname, language, weight_kg, egym_rounds, rest_timer_seconds')
+        .select('display_name, first_name, last_name, nickname, language, weight_kg, body_fat_percent, height_cm, egym_rounds, rest_timer_seconds')
         .eq('id', user.id)
         .single()
       if (data) {
@@ -64,6 +178,8 @@ export default function ProfilPage() {
           nickname:     data.nickname     ?? '',
           language:     (data.language as Lang) ?? 'de',
           weight_kg:    data.weight_kg?.toString() ?? '',
+          body_fat_percent: data.body_fat_percent?.toString() ?? '',
+          height_cm:    data.height_cm?.toString() ?? '',
           egym_rounds:  data.egym_rounds?.toString() ?? '3',
           rest_timer_seconds: data.rest_timer_seconds?.toString() ?? '90',
         }
@@ -116,6 +232,8 @@ export default function ProfilPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
     const wVal = draft.weight_kg ? parseFloat(draft.weight_kg) : null
+    const fVal = draft.body_fat_percent ? parseFloat(draft.body_fat_percent) : null
+    const hVal = draft.height_cm ? parseFloat(draft.height_cm) : null
     const rVal = draft.egym_rounds ? parseInt(draft.egym_rounds, 10) : 3
     const tVal = draft.rest_timer_seconds ? parseInt(draft.rest_timer_seconds, 10) : 90
     await supabase.from('profiles').upsert({
@@ -126,6 +244,8 @@ export default function ProfilPage() {
       nickname:     draft.nickname,
       language:     lang,
       weight_kg:    wVal,
+      body_fat_percent: fVal,
+      height_cm:    hVal,
       egym_rounds:  rVal,
       rest_timer_seconds: tVal,
     })
@@ -231,15 +351,31 @@ export default function ProfilPage() {
           </div>
         </button>
 
-        <button className="settings-row" onClick={() => setActiveView('weight')}>
+        <button className="settings-row" onClick={() => setActiveView('height')}>
+          <div className="settings-row-content">
+            <div className="settings-row-icon" style={{ background: '#3b82f622', color: '#3b82f6' }}>
+              <Scale size={16} />
+            </div>
+            <span className="settings-row-label">{t(lang, 'bodyHeight')}</span>
+          </div>
+          <div className="settings-row-right">
+            <span className="settings-row-value">{profile.height_cm ? `${profile.height_cm} cm` : '—'}</span>
+            <ChevronRight size={18} className="settings-row-chevron" />
+          </div>
+        </button>
+
+        <button className="settings-row" onClick={() => setActiveView('bodyParams')}>
           <div className="settings-row-content">
             <div className="settings-row-icon" style={{ background: '#ec489922', color: '#ec4899' }}>
               <Scale size={16} />
             </div>
-            <span className="settings-row-label">{t(lang, 'bodyWeight')}</span>
+            <span className="settings-row-label">{t(lang, 'bodyParams')}</span>
           </div>
           <div className="settings-row-right">
-            <span className="settings-row-value">{profile.weight_kg ? `${profile.weight_kg} kg` : '—'}</span>
+            <span className="settings-row-value">
+              {profile.weight_kg ? `${profile.weight_kg} kg` : '—'}
+              {profile.body_fat_percent ? ` · ${profile.body_fat_percent}%` : ''}
+            </span>
             <ChevronRight size={18} className="settings-row-chevron" />
           </div>
         </button>
@@ -368,21 +504,20 @@ export default function ProfilPage() {
     </div>
   )
 
-  const renderWeight = () => (
+  const renderHeight = () => (
     <div className="animate-slide-down">
-      <SubViewHeader title={t(lang, 'bodyWeight')} />
+      <SubViewHeader title={t(lang, 'bodyHeight')} />
       <div className="px-4 mt-4">
         <div className="card">
           <div className="input-group mb-4">
-            <label className="input-label">{t(lang, 'bodyWeight')}</label>
+            <label className="input-label">{t(lang, 'bodyHeight')}</label>
             <input
               type="number"
               inputMode="decimal"
-              step="0.001"
               className="input-field"
-              placeholder="z.B. 75.5"
-              value={draft.weight_kg}
-              onChange={e => setDraft(d => ({ ...d, weight_kg: e.target.value }))}
+              placeholder="z.B. 180"
+              value={draft.height_cm}
+              onChange={e => setDraft(d => ({ ...d, height_cm: e.target.value }))}
             />
           </div>
           <button className="btn btn-primary btn-full" onClick={saveProfile} disabled={saving}>
@@ -393,6 +528,157 @@ export default function ProfilPage() {
       </div>
     </div>
   )
+
+  const renderBodyParams = () => {
+    return (
+      <div className="animate-slide-down">
+        <SubViewHeader title={t(lang, 'bodyParams')} />
+        <div className="px-4 mt-4">
+          {/* New Entry Form */}
+          <div className="card mb-4">
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Plus size={16} className="text-accent" />
+              {t(lang, 'addMeasurementBtn')}
+            </h3>
+            <form onSubmit={handleAddMeasurement} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label className="input-label">{t(lang, 'bodyWeight')}</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    placeholder="z.B. 75.5"
+                    className="input-field"
+                    value={newWeight}
+                    onChange={e => setNewWeight(e.target.value)}
+                  />
+                </div>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label className="input-label">{t(lang, 'bodyFat')}</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    placeholder="z.B. 15.0"
+                    className="input-field"
+                    value={newBodyFat}
+                    onChange={e => setNewBodyFat(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="input-group">
+                <label className="input-label">{t(lang, 'measurementDate')}</label>
+                <input
+                  type="date"
+                  className="input-field"
+                  value={newLoggedAt}
+                  onChange={e => setNewLoggedAt(e.target.value)}
+                  required
+                />
+              </div>
+
+              {saveMeasurementError && (
+                <p style={{ color: 'var(--danger)', fontSize: '0.8rem' }}>{saveMeasurementError}</p>
+              )}
+
+              <button type="submit" className="btn btn-primary btn-full mt-1" disabled={savingMeasurement}>
+                {savingMeasurement ? <Loader2 size={16} className="spin" /> : null}
+                {t(lang, 'addMeasurementBtn')}
+              </button>
+            </form>
+          </div>
+
+          {/* History List */}
+          <div className="card">
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 12 }}>
+              📊 {t(lang, 'activityHistory')}
+            </h3>
+            {loadingMeasurements ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="spin text-accent" size={24} />
+              </div>
+            ) : measurements.length === 0 ? (
+              <p className="text-muted text-sm text-center py-4">
+                {t(lang, 'noMeasurementsYet')}
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {measurements.map(m => {
+                  const mDate = new Date(m.logged_at)
+                  const dateStr = mDate.toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-GB', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric'
+                  })
+                  
+                  // Calculate BMI for this log if height is available
+                  const heightNum = profile.height_cm ? parseFloat(profile.height_cm) : 0
+                  const bmi = (m.weight_kg && heightNum) 
+                    ? (m.weight_kg / Math.pow(heightNum / 100, 2)).toFixed(1)
+                    : null
+
+                  return (
+                    <div key={m.id} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--bg-base)',
+                      border: '1px solid var(--border)',
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{dateStr}</div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: 2, display: 'flex', gap: 8 }}>
+                          <span>{m.weight_kg ? `${m.weight_kg} kg` : '—'}</span>
+                          {m.body_fat_percent !== null && (
+                            <span className="text-secondary" style={{ fontWeight: 500 }}>
+                              · {m.body_fat_percent}% {lang === 'de' ? 'Fett' : lang === 'ru' ? 'жир' : 'fat'}
+                            </span>
+                          )}
+                          {bmi && (
+                            <span style={{ color: 'var(--accent)', fontWeight: 500 }}>
+                              · BMI: {bmi}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => handleDeleteMeasurement(m.id)}
+                        disabled={deletingMeasurementId === m.id}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 4,
+                          borderRadius: 'var(--radius-sm)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'color 0.2s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                      >
+                        {deletingMeasurementId === m.id ? (
+                          <Loader2 size={16} className="spin" />
+                        ) : (
+                          <Trash2 size={16} />
+                        )}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const renderEgymRounds = () => (
     <div className="animate-slide-down">
@@ -527,7 +813,8 @@ export default function ProfilPage() {
     <div className="pb-8">
       {activeView === 'main' && renderMainView()}
       {activeView === 'personalInfo' && renderPersonalInfo()}
-      {activeView === 'weight' && renderWeight()}
+      {activeView === 'height' && renderHeight()}
+      {activeView === 'bodyParams' && renderBodyParams()}
       {activeView === 'egymRounds' && renderEgymRounds()}
       {activeView === 'restTimer' && renderRestTimer()}
       {activeView === 'password' && renderPassword()}
