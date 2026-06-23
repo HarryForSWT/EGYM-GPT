@@ -11,7 +11,7 @@ import { useWakeLock } from '@/hooks/useWakeLock'
 import { enqueueSetUpsert, processSyncQueue } from '@/lib/syncQueue'
 
 type Exercise = { id: string; name: string; muscle_group: string; egym_order: number }
-type SetDetails = { weight: string; reps: string }
+type SetDetails = { weight: string; reps: string; active_kcal?: number | null }
 type RoundWeights = Record<string, Record<number, SetDetails | null>>
 type MaxLifts = Record<string, number>
 
@@ -55,6 +55,13 @@ export default function TrainingPage() {
   const [restTimerSeconds, setRestTimerSeconds] = useState<number>(90)
   const [timerOpen, setTimerOpen]               = useState(false)
   const [timerDuration, setTimerDuration]       = useState(90)
+
+  // AI calorie states
+  const [aiKcal, setAiKcal] = useState<number | null>(null)
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [setChangeCounter, setSetChangeCounter] = useState(0)
 
   // Page Settings modal states
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false)
@@ -144,7 +151,7 @@ export default function TrainingPage() {
 
       // Fetch workout for selected date
       const { data: selectedWorkouts } = await supabase
-        .from('workouts').select('id, status')
+        .from('workouts').select('id, status, estimated_kcal, ai_explanation')
         .eq('user_id', user.id)
         .gte('start_time', dateStart.toISOString())
         .lte('start_time', dateEnd.toISOString())
@@ -162,7 +169,11 @@ export default function TrainingPage() {
       if (selectedWorkouts && selectedWorkouts.length > 0) {
         wid = selectedWorkouts[0].id
         completedState = selectedWorkouts[0].status === 'completed'
+        setAiKcal(selectedWorkouts[0].estimated_kcal)
+        setAiExplanation(selectedWorkouts[0].ai_explanation)
       } else {
+        setAiKcal(null)
+        setAiExplanation(null)
         // Only auto-create if it's today
         const isToday = getGermanDateString(selectedDate) === getGermanDateString(new Date())
         if (isToday) {
@@ -179,7 +190,7 @@ export default function TrainingPage() {
 
       if (wid) {
         const { data: existingSets } = await supabase
-          .from('sets').select('exercise_id, weight_kg, reps, round_number').eq('workout_id', wid)
+          .from('sets').select('exercise_id, weight_kg, reps, round_number, active_kcal').eq('workout_id', wid)
         const loadedWeights: RoundWeights = {}
         existingSets?.forEach(s => {
           if (!loadedWeights[s.exercise_id]) loadedWeights[s.exercise_id] = {}
@@ -187,7 +198,8 @@ export default function TrainingPage() {
           if (r >= 1 && r <= currentRounds) {
             loadedWeights[s.exercise_id][r] = {
               weight: s.weight_kg?.toString() ?? '',
-              reps: s.reps?.toString() ?? '12'
+              reps: s.reps?.toString() ?? '12',
+              active_kcal: s.active_kcal
             }
           }
         })
@@ -308,6 +320,8 @@ export default function TrainingPage() {
       setWorkoutId(nw.id)
       setIsCompleted(false)
       setWeights({})
+      setAiKcal(null)
+      setAiExplanation(null)
       if (exercises.length > 0) {
         setActiveExerciseId(exercises[0].id)
       }
@@ -350,14 +364,16 @@ export default function TrainingPage() {
     }
     
     // 1. Update local state
+    const setKcal = calculateFallbackKcal(dialogExercise.name, wVal, rVal, userWeight, 'egym')
     setWeights(prev => ({
       ...prev,
       [dialogExercise.id]: {
         ...(prev[dialogExercise.id] ?? {}),
-        [dialogRound]: { weight: wVal.toString(), reps: rVal.toString() }
+        [dialogRound]: { weight: wVal.toString(), reps: rVal.toString(), active_kcal: setKcal }
       }
     }))
     
+    setSetChangeCounter(c => c + 1)
     setDialogOpen(false)
 
     // Trigger Rest Timer
@@ -376,7 +392,7 @@ export default function TrainingPage() {
         ...weights,
         [dialogExercise.id]: {
           ...(weights[dialogExercise.id] ?? {}),
-          [dialogRound]: { weight: wVal.toString(), reps: rVal.toString() }
+          [dialogRound]: { weight: wVal.toString(), reps: rVal.toString(), active_kcal: setKcal }
         }
       }
       
@@ -410,6 +426,7 @@ export default function TrainingPage() {
       weight_kg: wVal, 
       reps: rVal, 
       round_number: dialogRound,
+      active_kcal: setKcal,
       created_at: new Date().toISOString()
     }
     
@@ -421,9 +438,111 @@ export default function TrainingPage() {
   }
 
   const totalCompletedSets = exercises.reduce((sum, ex) => sum + completedRounds(ex.id), 0)
-  const estimatedKcal = Math.round(totalCompletedSets * 1.5 * 5.5 * userWeight / 60)
+
+  // Calculate dynamic fallback calorie burn by summing up all set fallback values
+  const fallbackKcalSum = exercises.reduce((sum, ex) => {
+    const exW = weights[ex.id] || {}
+    const setKcalSum = roundsArray.reduce((sSum, r) => {
+      const set = exW[r]
+      return sSum + (set?.active_kcal || 0)
+    }, 0)
+    return sum + setKcalSum
+  }, 0)
+
+  const estimatedKcal = aiKcal !== null && aiKcal !== undefined ? aiKcal : fallbackKcalSum
 
   const isToday = getGermanDateString(selectedDate) === getGermanDateString(new Date())
+
+  const handleEstimateAI = async () => {
+    if (!workoutId) return
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const res = await fetch('/api/estimate-calories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workoutId })
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setAiError(data.error || 'API Error')
+      } else {
+        setAiKcal(data.estimated_kcal)
+        setAiExplanation(data.ai_explanation)
+
+        // Re-fetch sets from Supabase to load the updated active_kcal values
+        const { data: updatedSets } = await supabase
+          .from('sets')
+          .select('exercise_id, weight_kg, reps, round_number, active_kcal')
+          .eq('workout_id', workoutId)
+
+        if (updatedSets) {
+          const loadedWeights: RoundWeights = {}
+          updatedSets.forEach(s => {
+            if (!loadedWeights[s.exercise_id]) loadedWeights[s.exercise_id] = {}
+            const r = s.round_number
+            if (r >= 1 && r <= egymRounds) {
+              loadedWeights[s.exercise_id][r] = {
+                weight: s.weight_kg?.toString() ?? '',
+                reps: s.reps?.toString() ?? '12',
+                active_kcal: s.active_kcal
+              }
+            }
+          })
+          setWeights(loadedWeights)
+        }
+      }
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!workoutId || totalCompletedSets === 0) return
+    
+    if (setChangeCounter === 0 && aiKcal !== null && aiKcal !== undefined) {
+      return
+    }
+    
+    const timer = setTimeout(() => {
+      handleEstimateAI()
+    }, 3000)
+    
+    return () => clearTimeout(timer)
+  }, [setChangeCounter, workoutId])
+
+  const renderCalorieCard = () => {
+    if (totalCompletedSets === 0) return null
+
+    const displayingAi = aiKcal !== null && aiKcal !== undefined
+
+    return (
+      <div className="card" style={{ padding: '14px 16px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+            <span>{displayingAi ? '🤖' : '⚡'}</span>
+            <span>{t(lang, 'estCalorieBurn')} {displayingAi ? `(${t(lang, 'aiEstimated')})` : ''}</span>
+          </span>
+          <span style={{ fontSize: '1.05rem', fontWeight: 700, color: displayingAi ? 'var(--accent)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {aiLoading && <Loader2 size={14} className="spin text-accent" />}
+            <span>{estimatedKcal} {t(lang, 'kcal')}</span>
+          </span>
+        </div>
+        {displayingAi && aiExplanation && (
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.35, borderLeft: '2px solid var(--accent)', paddingLeft: 8, margin: '8px 0 0' }}>
+            &quot;{aiExplanation}&quot;
+          </p>
+        )}
+        {aiError && (
+          <div style={{ fontSize: '0.72rem', color: 'var(--danger)', marginTop: 6 }}>
+            ⚠️ {t(lang, 'aiError')}: {aiError}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   if (loading) {
     return <div className="flex justify-center items-center h-full mt-20"><Loader2 className="spin text-accent" size={32} /></div>
@@ -585,7 +704,12 @@ export default function TrainingPage() {
                                   className={`round-cell-button ${filled ? 'filled' : ''}`}
                                   onClick={() => openSetDialog(ex, r)}
                                 >
-                                  {filled ? `${set.weight} kg * ${set.reps}` : '--'}
+                                  {filled ? (
+                                    <span style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.2 }}>
+                                      <span>{set.weight} kg * {set.reps}</span>
+                                      {set.active_kcal && <span style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--accent)' }}>🔥 {set.active_kcal} kcal</span>}
+                                    </span>
+                                  ) : '--'}
                                 </button>
                               </div>
                             )
@@ -599,28 +723,17 @@ export default function TrainingPage() {
             })}
 
             <div style={{ marginTop: 16, marginBottom: 8 }}>
+              {renderCalorieCard()}
               {!isCompleted ? (
-                <>
-                  {estimatedKcal > 0 && (
-                    <div style={{ textAlign: 'center', marginBottom: 10, fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                      ⚡ {t(lang, 'estCalorieBurn')}: <strong style={{ color: 'var(--accent)' }}>{estimatedKcal} {t(lang, 'kcal')}</strong>
-                    </div>
-                  )}
-                  <button className="btn btn-success btn-full btn-lg" onClick={finishTraining} disabled={finishing}>
-                    {finishing ? <Loader2 size={18} className="spin" /> : <Check size={20} />}
-                    {finishing ? t(lang, 'saving2') : t(lang, 'finishTraining')}
-                  </button>
-                </>
+                <button className="btn btn-success btn-full btn-lg" onClick={finishTraining} disabled={finishing}>
+                  {finishing ? <Loader2 size={18} className="spin" /> : <Check size={20} />}
+                  {finishing ? t(lang, 'saving2') : t(lang, 'finishTraining')}
+                </button>
               ) : (
                 <div className="card text-center py-4" style={{ borderColor: '#22c55e33' }}>
                   <Trophy size={28} className="text-warning" style={{ margin: '0 auto 8px' }} />
                   <p style={{ fontWeight: 600 }}>{t(lang, 'trainingDone')}</p>
-                  <p className="text-secondary text-sm mt-1 mb-2">{t(lang, 'trainingDoneMsg')}</p>
-                  {estimatedKcal > 0 && (
-                    <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 14 }}>
-                      🔥 {t(lang, 'estCalorieBurn')}: <span style={{ color: 'var(--accent)' }}>{estimatedKcal} {t(lang, 'kcal')}</span>
-                    </p>
-                  )}
+                  <p className="text-secondary text-sm mt-1 mb-4">{t(lang, 'trainingDoneMsg')}</p>
                   <button
                     className="btn btn-secondary btn-sm"
                     style={{ margin: '0 auto' }}
@@ -665,7 +778,7 @@ export default function TrainingPage() {
               <div className="input-group flex-1">
                 <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {lang === 'de' ? 'Gewicht (kg)' : lang === 'ru' ? 'Вес (кг)' : 'Weight (kg)'}
-                  {dialogExercise?.name?.toLowerCase().includes('klimmzug') && (
+                  {(dialogExercise?.name?.toLowerCase().includes('klimmzug') || dialogExercise?.name?.toLowerCase().includes('klimmzü')) && (
                     <span 
                       title={t(lang, 'pullupWeightInfo')} 
                       style={{ color: 'var(--accent)', display: 'flex', cursor: 'pointer' }}
@@ -753,3 +866,35 @@ export default function TrainingPage() {
     </div>
   )
 }
+
+function calculateFallbackKcal(
+  exerciseName: string,
+  weightKg: number | null | undefined,
+  reps: number | null | undefined,
+  userWeight: number,
+  type: 'egym' | 'classic'
+): number {
+  const w = weightKg || 0
+  const r = reps || 0
+  if (r === 0) return 0
+  
+  const name = exerciseName.toLowerCase()
+  let muscleFactor = 1.0
+  
+  if (name.includes('bein') || name.includes('knie') || name.includes('squat') || name.includes('kreuzheben') || name.includes('presse')) {
+    muscleFactor = 1.3
+  } else if (name.includes('curl') || name.includes('trizeps') || name.includes('seitheben') || name.includes('fly') || name.includes('wade') || name.includes('waden')) {
+    muscleFactor = 0.7
+  }
+  
+  const isPullup = name.includes('klimmzug') || name.includes('klimmzü')
+  const effW = isPullup ? Math.max(0, userWeight - w) : w
+  
+  const baseKcalPerSet = (type === 'egym' ? 1.5 * 5.5 : 2.5 * 4.0) * userWeight / 60
+  const repsFactor = r / 10
+  const weightRatio = effW > 0 ? (effW / (userWeight * 0.7)) : 0.5
+  const intensityFactor = 0.5 + 0.5 * weightRatio
+  
+  return Math.round(baseKcalPerSet * repsFactor * intensityFactor * muscleFactor)
+}
+

@@ -46,10 +46,21 @@ export default function Home() {
     const classicSets = wSets.filter(s => s.exercise?.type === 'classic')
     const cardioSets = wSets.filter(s => s.exercise?.type === 'cardio')
     
-    const egymCal = egymSets.length * 1.5 * 5.5 * weight / 60
-    const classicCal = classicSets.length * 2.5 * 4.0 * weight / 60
-    const cardioCal = cardioSets.reduce((sum, s) => sum + (s.active_kcal || s.total_kcal || 0), 0)
-    const kcal = Math.round(egymCal + classicCal + cardioCal)
+    const totalSetsKcal = wSets.reduce((sum, s) => {
+      if (s.active_kcal !== null && s.active_kcal !== undefined) {
+        return sum + s.active_kcal
+      }
+      if (s.exercise?.type === 'egym') {
+        return sum + (1.5 * 5.5 * weight / 60)
+      } else if (s.exercise?.type === 'classic') {
+        return sum + (2.5 * 4.0 * weight / 60)
+      } else {
+        return sum + (s.total_kcal || 0)
+      }
+    }, 0)
+    const kcal = w.estimated_kcal !== null && w.estimated_kcal !== undefined
+      ? w.estimated_kcal
+      : Math.round(totalSetsKcal)
 
     const volume = Math.round(wSets.reduce((sum, s) => sum + (parseFloat(s.weight_kg?.toString().replace(',', '.') || '0') * parseInt(s.reps?.toString() || '0', 10)), 0))
     
@@ -92,7 +103,7 @@ export default function Home() {
 
       const { data: recWorkouts } = await supabase
         .from('workouts')
-        .select('id, start_time, status, completed_at, sets(exercise_id, weight_kg, reps, active_kcal, total_kcal, exercise:exercises(type, name, muscle_group))')
+        .select('id, start_time, status, completed_at, estimated_kcal, sets(exercise_id, weight_kg, reps, active_kcal, total_kcal, exercise:exercises(type, name, muscle_group))')
         .eq('user_id', user.id)
         .gte('start_time', startOfMonth.toISOString())
         .lte('start_time', endOfMonth.toISOString())

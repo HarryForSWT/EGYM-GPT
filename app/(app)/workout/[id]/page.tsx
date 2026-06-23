@@ -60,6 +60,7 @@ export default function WorkoutDetailPage() {
   const [loading, setLoading] = useState(true)
   const [workout, setWorkout] = useState<any>(null)
   const [groupedExercises, setGroupedExercises] = useState<GroupedExercise[]>([])
+  const [userWeight, setUserWeight] = useState<number>(75)
   const [stats, setStats] = useState({
     volume: 0,
     kcal: 0,
@@ -83,6 +84,7 @@ export default function WorkoutDetailPage() {
       if (prof?.weight_kg) {
         uWeight = parseFloat(prof.weight_kg)
       }
+      setUserWeight(uWeight)
 
       // Fetch workout
       const { data: wData } = await supabase
@@ -165,10 +167,19 @@ export default function WorkoutDetailPage() {
         setGroupedExercises(groupsArr)
 
         // Calculate Kcal
-        const egymCal = egymSets * 1.5 * 5.5 * uWeight / 60
-        const classicCal = classicSets * 2.5 * 4.0 * uWeight / 60
-        const cardioCal = sData.reduce((sum, s) => sum + (s.active_kcal || s.total_kcal || 0), 0)
-        const kcal = Math.round(egymCal + classicCal + cardioCal)
+        const totalSetsKcal = sData.reduce((sum, s) => {
+          if (s.active_kcal !== null && s.active_kcal !== undefined) {
+            return sum + s.active_kcal
+          }
+          if (s.exercise && (s.exercise.type === 'egym' || s.exercise.type === 'classic')) {
+            return sum + calculateFallbackKcal(s.exercise.name, s.weight_kg, s.reps, uWeight, s.exercise.type as 'egym' | 'classic')
+          } else {
+            return sum + (s.total_kcal || 0)
+          }
+        }, 0)
+        const kcal = wData.estimated_kcal !== null && wData.estimated_kcal !== undefined
+          ? wData.estimated_kcal
+          : Math.round(totalSetsKcal)
 
         // Type label
         const activeTypes: string[] = []
@@ -294,6 +305,19 @@ export default function WorkoutDetailPage() {
           </div>
         </div>
 
+        {/* AI Explanation Card */}
+        {workout.ai_explanation && (
+          <div className="card" style={{ padding: '14px 16px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', marginBottom: 24, boxShadow: 'var(--shadow-sm)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.85rem', color: 'var(--accent)', fontWeight: 600 }}>
+              <span style={{ fontSize: '1rem' }}>🤖</span>
+              <span>{lang === 'de' ? 'KI-Schätzung Details' : lang === 'ru' ? 'Детали оценки ИИ' : 'AI Estimate Details'}</span>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: 1.4, margin: 0 }}>
+              &quot;{workout.ai_explanation}&quot;
+            </p>
+          </div>
+        )}
+
         {/* Exercises List */}
         <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: 12 }}>Übungen</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
@@ -316,13 +340,13 @@ export default function WorkoutDetailPage() {
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px 12px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                           {s.distance_m && (
-                            <div>📍 {g.exerciseName.toLowerCase().includes('schwimm') ? `${s.distance_m} m` : `${(s.distance_m / 1000).toFixed(2)} km`}</div>
+                            <div>📍 {g.exerciseName.toLowerCase().includes('schwimm') ? `${formatDecimal(s.distance_m, lang)} m` : `${formatDecimal(s.distance_m / 1000, lang, 2)} km`}</div>
                           )}
-                          {s.active_kcal && <div>🔥 {s.active_kcal} kcal</div>}
+                          {s.active_kcal && <div>🔥 {formatDecimal(s.active_kcal, lang)} kcal</div>}
                           {s.avg_pace && <div>⏱️ {s.avg_pace}</div>}
-                          {s.avg_heart_rate_bpm && <div>❤️ {s.avg_heart_rate_bpm} bpm</div>}
-                          {s.avg_speed_kmh && <div>⚡ {s.avg_speed_kmh} km/h</div>}
-                          {s.elevation_gain_m && <div>⛰️ {s.elevation_gain_m} m</div>}
+                          {s.avg_heart_rate_bpm && <div>❤️ {formatDecimal(s.avg_heart_rate_bpm, lang)} bpm</div>}
+                          {s.avg_speed_kmh && <div>⚡ {formatDecimal(s.avg_speed_kmh, lang)} km/h</div>}
+                          {s.elevation_gain_m && <div>⛰️ {formatDecimal(s.elevation_gain_m, lang)} m</div>}
                           {s.avg_cadence_spm && <div>🏃‍♂️ {s.avg_cadence_spm} spm</div>}
                           {s.laps && <div>🔁 {s.laps} {s.pool_length_m && `(${s.pool_length_m}m)`}</div>}
                         </div>
@@ -331,10 +355,21 @@ export default function WorkoutDetailPage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', width: '100%' }}>
                         <span className="text-muted" style={{ width: '60px' }}>Satz {s.round}</span>
                         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', fontWeight: 500 }}>
-                          {s.weight} kg
+                          {formatDecimal(s.weight, lang)} kg
                         </div>
-                        <div style={{ width: '60px', textAlign: 'right', fontWeight: 500 }}>
-                          {s.reps} Wdh.
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+                          <span style={{ fontWeight: 500 }}>{s.reps} Wdh.</span>
+                          {(() => {
+                            const kcalVal = s.active_kcal !== null && s.active_kcal !== undefined
+                              ? s.active_kcal
+                              : calculateFallbackKcal(g.exerciseName, s.weight, s.reps, userWeight, g.exerciseType as 'egym' | 'classic')
+                            return kcalVal > 0 ? (
+                              <span style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <span>🔥</span>
+                                <span>{kcalVal} kcal</span>
+                              </span>
+                            ) : null
+                          })()}
                         </div>
                       </div>
                     )}
@@ -373,4 +408,51 @@ export default function WorkoutDetailPage() {
       `}</style>
     </div>
   )
+}
+
+function calculateFallbackKcal(
+  exerciseName: string,
+  weightKg: number | null | undefined,
+  reps: number | null | undefined,
+  userWeight: number,
+  type: 'egym' | 'classic'
+): number {
+  const w = weightKg || 0
+  const r = reps || 0
+  if (r === 0) return 0
+  
+  const name = exerciseName.toLowerCase()
+  let muscleFactor = 1.0
+  
+  if (name.includes('bein') || name.includes('knie') || name.includes('squat') || name.includes('kreuzheben') || name.includes('presse')) {
+    muscleFactor = 1.3
+  } else if (name.includes('curl') || name.includes('trizeps') || name.includes('seitheben') || name.includes('fly') || name.includes('wade') || name.includes('waden')) {
+    muscleFactor = 0.7
+  }
+  
+  const isPullup = name.includes('klimmzug') || name.includes('klimmzü')
+  const effW = isPullup ? Math.max(0, userWeight - w) : w
+  
+  const baseKcalPerSet = (type === 'egym' ? 1.5 * 5.5 : 2.5 * 4.0) * userWeight / 60
+  const repsFactor = r / 10
+  const weightRatio = effW > 0 ? (effW / (userWeight * 0.7)) : 0.5
+  const intensityFactor = 0.5 + 0.5 * weightRatio
+  
+  return Math.round(baseKcalPerSet * repsFactor * intensityFactor * muscleFactor)
+}
+
+function formatDecimal(
+  val: number | string | undefined | null,
+  lang: 'de' | 'en' | 'ru',
+  fractionDigits?: number
+): string {
+  if (val === undefined || val === null) return ''
+  const num = typeof val === 'string' ? parseFloat(val.replace(',', '.')) : val
+  if (isNaN(num)) return String(val)
+  
+  const locale = lang === 'de' ? 'de-DE' : lang === 'ru' ? 'ru-RU' : 'en-GB'
+  return num.toLocaleString(locale, {
+    minimumFractionDigits: fractionDigits !== undefined ? fractionDigits : 0,
+    maximumFractionDigits: fractionDigits !== undefined ? fractionDigits : 2
+  })
 }

@@ -11,7 +11,7 @@ import { useWakeLock } from '@/hooks/useWakeLock'
 import { enqueueSetUpsert, processSyncQueue } from '@/lib/syncQueue'
 
 type Exercise = { id: string; name: string; muscle_group: string }
-type SetItem = { weight: string; reps: string; round_number: number }
+type SetItem = { weight: string; reps: string; round_number: number; active_kcal?: number | null }
 
 function getDateLabel(date: Date, lang: 'de' | 'en' | 'ru'): string {
   const todayStr = getGermanDateString(new Date())
@@ -78,6 +78,13 @@ export default function ClassicTrainingPage() {
   const [restTimerSeconds, setRestTimerSeconds] = useState<number>(90)
   const [timerOpen, setTimerOpen] = useState(false)
   const [timerDuration, setTimerDuration] = useState(90)
+
+  // AI calorie states
+  const [aiKcal, setAiKcal] = useState<number | null>(null)
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [setChangeCounter, setSetChangeCounter] = useState(0)
 
   // Page Settings modal states
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false)
@@ -166,7 +173,7 @@ export default function ClassicTrainingPage() {
       // Fetch workout for selected date
       const { data: selectedWorkouts } = await supabase
         .from('workouts')
-        .select('id, status')
+        .select('id, status, estimated_kcal, ai_explanation')
         .eq('user_id', user.id)
         .gte('start_time', dateStart.toISOString())
         .lte('start_time', dateEnd.toISOString())
@@ -186,7 +193,11 @@ export default function ClassicTrainingPage() {
       if (selectedWorkouts && selectedWorkouts.length > 0) {
         wid = selectedWorkouts[0].id
         completedState = selectedWorkouts[0].status === 'completed'
+        setAiKcal(selectedWorkouts[0].estimated_kcal)
+        setAiExplanation(selectedWorkouts[0].ai_explanation)
       } else {
+        setAiKcal(null)
+        setAiExplanation(null)
         // Nur für Heute automatisch anlegen
         const isToday = getGermanDateString(selectedDate) === getGermanDateString(new Date())
         if (isToday) {
@@ -206,7 +217,7 @@ export default function ClassicTrainingPage() {
       if (wid) {
         const { data: existingSets } = await supabase
           .from('sets')
-          .select('exercise_id, weight_kg, reps, round_number')
+          .select('exercise_id, weight_kg, reps, round_number, active_kcal')
           .eq('workout_id', wid)
 
         const loadedSets: Record<string, SetItem[]> = {}
@@ -215,7 +226,8 @@ export default function ClassicTrainingPage() {
           loadedSets[s.exercise_id].push({
             weight: s.weight_kg?.toString() ?? '',
             reps: s.reps?.toString() ?? '12',
-            round_number: s.round_number
+            round_number: s.round_number,
+            active_kcal: s.active_kcal
           })
         })
 
@@ -255,6 +267,8 @@ export default function ClassicTrainingPage() {
       setWorkoutId(nw.id)
       setIsCompleted(false)
       setSets({})
+      setAiKcal(null)
+      setAiExplanation(null)
       if (exercises.length > 0) {
         setActivePanel(exercises[0].id)
       }
@@ -367,15 +381,19 @@ export default function ClassicTrainingPage() {
     const currentExSets = sets[exId] || []
     const nextRound = currentExSets.length > 0 ? Math.max(...currentExSets.map(s => s.round_number)) + 1 : 1
 
+    const ex = exercises.find(e => e.id === exId)
+    const setKcal = ex ? calculateFallbackKcal(ex.name, wVal, rVal, userWeight, 'classic') : 0
+
     // Optimistic UI Update
     setSets(prev => {
       const current = prev[exId] || []
-      const updated = [...current, { weight: wVal.toString(), reps: rVal.toString(), round_number: nextRound }]
+      const updated = [...current, { weight: wVal.toString(), reps: rVal.toString(), round_number: nextRound, active_kcal: setKcal }]
       return {
         ...prev,
         [exId]: updated.sort((a, b) => a.round_number - b.round_number)
       }
     })
+    setSetChangeCounter(c => c + 1)
     setCurrentWeight('')
     setCurrentReps('')
 
@@ -393,6 +411,7 @@ export default function ClassicTrainingPage() {
       round_number: nextRound,
       weight_kg: wVal,
       reps: rVal,
+      active_kcal: setKcal,
       created_at: new Date().toISOString()
     }
     
@@ -416,6 +435,7 @@ export default function ClassicTrainingPage() {
         ...prev,
         [exId]: (prev[exId] || []).filter(s => s.round_number !== roundNum)
       }))
+      setSetChangeCounter(c => c + 1)
     }
   }
 
@@ -433,12 +453,14 @@ export default function ClassicTrainingPage() {
     const rVal = parseInt(dialogReps, 10)
     if (isNaN(wVal) || isNaN(rVal) || wVal < 0 || rVal <= 0) return
 
+    const setKcal = calculateFallbackKcal(dialogExercise.name, wVal, rVal, userWeight, 'classic')
+
     // Optimistic UI Update
     setSets(prev => {
       const current = prev[dialogExercise.id] || []
       const updated = current.map(s => {
         if (s.round_number === dialogRound) {
-          return { ...s, weight: wVal.toString(), reps: rVal.toString() }
+          return { ...s, weight: wVal.toString(), reps: rVal.toString(), active_kcal: setKcal }
         }
         return s
       })
@@ -447,6 +469,7 @@ export default function ClassicTrainingPage() {
         [dialogExercise.id]: updated
       }
     })
+    setSetChangeCounter(c => c + 1)
     setDialogOpen(false)
     setDialogExercise(null)
     setDialogRound(null)
@@ -458,6 +481,7 @@ export default function ClassicTrainingPage() {
       round_number: dialogRound,
       weight_kg: wVal,
       reps: rVal,
+      active_kcal: setKcal,
       created_at: new Date().toISOString()
     }
 
@@ -514,9 +538,112 @@ export default function ClassicTrainingPage() {
   }
 
   const totalCompletedSets = exercises.reduce((sum, ex) => sum + (sets[ex.id]?.length || 0), 0)
-  const estimatedKcal = Math.round(totalCompletedSets * 2.5 * 4.0 * userWeight / 60)
+
+  // Calculate dynamic fallback calorie burn by summing up all set fallback values
+  const fallbackKcalSum = exercises.reduce((sum, ex) => {
+    const exSets = sets[ex.id] || []
+    const setKcalSum = exSets.reduce((sSum, s) => sSum + (s.active_kcal || 0), 0)
+    return sum + setKcalSum
+  }, 0)
+
+  const estimatedKcal = aiKcal !== null && aiKcal !== undefined ? aiKcal : fallbackKcalSum
 
   const isToday = getGermanDateString(selectedDate) === getGermanDateString(new Date())
+
+  const handleEstimateAI = async () => {
+    if (!workoutId) return
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const res = await fetch('/api/estimate-calories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workoutId })
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setAiError(data.error || 'API Error')
+      } else {
+        setAiKcal(data.estimated_kcal)
+        setAiExplanation(data.ai_explanation)
+
+        // Re-fetch sets from Supabase to load the updated active_kcal values
+        const { data: updatedSets } = await supabase
+          .from('sets')
+          .select('exercise_id, weight_kg, reps, round_number, active_kcal')
+          .eq('workout_id', workoutId)
+
+        if (updatedSets) {
+          const loadedSets: Record<string, SetItem[]> = {}
+          updatedSets.forEach(s => {
+            if (!loadedSets[s.exercise_id]) loadedSets[s.exercise_id] = []
+            loadedSets[s.exercise_id].push({
+              weight: s.weight_kg?.toString() ?? '',
+              reps: s.reps?.toString() ?? '12',
+              round_number: s.round_number,
+              active_kcal: s.active_kcal
+            })
+          })
+          
+          // Sort sets inside groups
+          Object.keys(loadedSets).forEach(exId => {
+            loadedSets[exId].sort((a, b) => a.round_number - b.round_number)
+          })
+          
+          setSets(loadedSets)
+        }
+      }
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!workoutId || totalCompletedSets === 0) return
+    
+    if (setChangeCounter === 0 && aiKcal !== null && aiKcal !== undefined) {
+      return
+    }
+    
+    const timer = setTimeout(() => {
+      handleEstimateAI()
+    }, 3000)
+    
+    return () => clearTimeout(timer)
+  }, [setChangeCounter, workoutId])
+
+  const renderCalorieCard = () => {
+    if (totalCompletedSets === 0) return null
+
+    const displayingAi = aiKcal !== null && aiKcal !== undefined
+
+    return (
+      <div className="card" style={{ padding: '14px 16px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+            <span>{displayingAi ? '🤖' : '⚡'}</span>
+            <span>{t(lang, 'estCalorieBurn')} {displayingAi ? `(${t(lang, 'aiEstimated')})` : ''}</span>
+          </span>
+          <span style={{ fontSize: '1.05rem', fontWeight: 700, color: displayingAi ? 'var(--accent)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {aiLoading && <Loader2 size={14} className="spin text-accent" />}
+            <span>{estimatedKcal} {t(lang, 'kcal')}</span>
+          </span>
+        </div>
+        {displayingAi && aiExplanation && (
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.35, borderLeft: '2px solid var(--accent)', paddingLeft: 8, margin: '8px 0 0' }}>
+            &quot;{aiExplanation}&quot;
+          </p>
+        )}
+        {aiError && (
+          <div style={{ fontSize: '0.72rem', color: 'var(--danger)', marginTop: 6 }}>
+            ⚠️ {t(lang, 'aiError')}: {aiError}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   if (loading) {
     return <div className="flex justify-center items-center h-full mt-20"><Loader2 className="spin text-accent" size={32} /></div>
@@ -710,6 +837,12 @@ export default function ClassicTrainingPage() {
                               <div className="set-number" style={{ flex: 1 }}>{t(lang, 'setWord')} {index + 1}</div>
                               <div style={{ minWidth: 60 }}><strong>{set.weight}</strong> kg</div>
                               <div style={{ minWidth: 60 }}><strong>{set.reps}</strong> {lang === 'ru' ? 'повт' : 'Wdh'}</div>
+                              {set.active_kcal && (
+                                <div style={{ minWidth: 65, color: 'var(--accent)', fontWeight: 600, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                  <span>🔥</span>
+                                  <span>{set.active_kcal} kcal</span>
+                                </div>
+                              )}
                               <div style={{ display: 'flex', gap: 8 }}>
                                 <button className="text-muted" style={{ padding: 4 }} onClick={() => openEditDialog(ex, set)}>
                                   <Edit2 size={14} />
@@ -729,7 +862,7 @@ export default function ClassicTrainingPage() {
                             <div className="input-group">
                               <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {t(lang, 'weightLabel')}
-                                {ex.name.toLowerCase().includes('klimmzug') && (
+                                {(ex.name.toLowerCase().includes('klimmzug') || ex.name.toLowerCase().includes('klimmzü')) && (
                                   <span 
                                     title={t(lang, 'pullupWeightInfo')} 
                                     style={{ color: 'var(--accent)', display: 'flex', cursor: 'pointer' }}
@@ -784,35 +917,24 @@ export default function ClassicTrainingPage() {
             })}
 
             {/* Workout Abschluss Panel */}
-            {isCompleted ? (
-              <div className="mt-6 mb-4">
-                <div className="card text-center py-4">
+            <div className="mt-6 mb-4">
+              {renderCalorieCard()}
+              {isCompleted ? (
+                <div className="card text-center py-4" style={{ borderColor: '#22c55e33' }}>
                   <span style={{ fontSize: '1.5rem', marginBottom: 4, display: 'block' }}>✓</span>
                   <p style={{ fontWeight: 600, fontSize: '0.92rem' }}>{t(lang, 'trainingDone')}</p>
-                  <p className="text-secondary mb-3" style={{ fontSize: '0.78rem' }}>{t(lang, 'trainingDoneMsg')}</p>
-                  {estimatedKcal > 0 && (
-                    <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 14 }}>
-                      🔥 {t(lang, 'estCalorieBurn')}: <span style={{ color: 'var(--accent)' }}>{estimatedKcal} {t(lang, 'kcal')}</span>
-                    </p>
-                  )}
-                  <button className="btn btn-ghost btn-sm" style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }} onClick={resumeTraining}>
+                  <p className="text-secondary mb-4" style={{ fontSize: '0.78rem' }}>{t(lang, 'trainingDoneMsg')}</p>
+                  <button className="btn btn-ghost btn-sm" style={{ color: 'var(--text-secondary)', textDecoration: 'underline', margin: '0 auto' }} onClick={resumeTraining}>
                     {t(lang, 'resumeTraining')}
                   </button>
                 </div>
-              </div>
-            ) : (
-              <div className="mt-6 mb-4">
-                {estimatedKcal > 0 && (
-                  <div style={{ textAlign: 'center', marginBottom: 10, fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                    ⚡ {t(lang, 'estCalorieBurn')}: <strong style={{ color: 'var(--accent)' }}>{estimatedKcal} {t(lang, 'kcal')}</strong>
-                  </div>
-                )}
+              ) : (
                 <button className="btn btn-primary btn-full" onClick={finishTraining} disabled={finishing}>
                   {finishing ? <Loader2 size={18} className="spin" /> : <Check size={20} />}
                   {finishing ? t(lang, 'saving2') : t(lang, 'finishTraining')}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </>
         )}
       </div>
@@ -839,7 +961,7 @@ export default function ClassicTrainingPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {t(lang, 'weightLabel')}
-                  {dialogExercise.name.toLowerCase().includes('klimmzug') && (
+                  {(dialogExercise.name.toLowerCase().includes('klimmzug') || dialogExercise.name.toLowerCase().includes('klimmzü')) && (
                     <span 
                       title={t(lang, 'pullupWeightInfo')} 
                       style={{ color: 'var(--accent)', display: 'flex', cursor: 'pointer' }}
@@ -1082,3 +1204,35 @@ export default function ClassicTrainingPage() {
     </div>
   )
 }
+
+function calculateFallbackKcal(
+  exerciseName: string,
+  weightKg: number | null | undefined,
+  reps: number | null | undefined,
+  userWeight: number,
+  type: 'egym' | 'classic'
+): number {
+  const w = weightKg || 0
+  const r = reps || 0
+  if (r === 0) return 0
+  
+  const name = exerciseName.toLowerCase()
+  let muscleFactor = 1.0
+  
+  if (name.includes('bein') || name.includes('knie') || name.includes('squat') || name.includes('kreuzheben') || name.includes('presse')) {
+    muscleFactor = 1.3
+  } else if (name.includes('curl') || name.includes('trizeps') || name.includes('seitheben') || name.includes('fly') || name.includes('wade') || name.includes('waden')) {
+    muscleFactor = 0.7
+  }
+  
+  const isPullup = name.includes('klimmzug') || name.includes('klimmzü')
+  const effW = isPullup ? Math.max(0, userWeight - w) : w
+  
+  const baseKcalPerSet = (type === 'egym' ? 1.5 * 5.5 : 2.5 * 4.0) * userWeight / 60
+  const repsFactor = r / 10
+  const weightRatio = effW > 0 ? (effW / (userWeight * 0.7)) : 0.5
+  const intensityFactor = 0.5 + 0.5 * weightRatio
+  
+  return Math.round(baseKcalPerSet * repsFactor * intensityFactor * muscleFactor)
+}
+
